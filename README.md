@@ -26,6 +26,7 @@ This index lists every skill in `skills/`. Update it whenever you add or remove 
 | Skill | Description |
 | ----- | ----------- |
 | [`agent-team-review`](./skills/agent-team-review/) | Parallel multi-agent code review using Agent Teams. |
+| [`weekly-review`](./skills/weekly-review/) | Generates a weekly recap from Linear, Notion, and GitHub activity. |
 
 ## Authoring
 
