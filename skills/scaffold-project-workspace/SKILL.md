@@ -78,10 +78,10 @@ Five output templates live in `references/templates/`. Do NOT load them up
 front — each phase calls out the exact moment to load each one:
 
 - `references/templates/settings-json.md` — load before Step 2.5
-- `references/templates/per-repo-skill.md` — load before Step 2.7
-- `references/templates/architect-skill.md` — load before Step 2.8
-- `references/templates/team-skill.md` — load before Step 2.9
-- `references/templates/claude-md.md` — load before Step 2.10
+- `references/templates/per-repo-skill.md` — load before Step 2.6
+- `references/templates/architect-skill.md` — load before Step 2.7
+- `references/templates/team-skill.md` — load before Step 2.8
+- `references/templates/claude-md.md` — load before Step 2.9
 
 ## Phase 0: SIBLING SHORTCUT (optional)
 
@@ -239,7 +239,7 @@ mkdir -p {workspace}/.claude/skills
 mkdir -p {workspace}/architecture
 ```
 
-Note: Per-repo skill directories (`skills/{name}/`) are created in Step 2.7.
+Note: Per-repo skill directories (`skills/{name}/`) are created in Step 2.6.
 
 ### Step 2.2: Clone Repositories
 
@@ -259,7 +259,7 @@ For each cloned repo, read:
 2. `.claude/CLAUDE.md` (if exists) — additional context
 3. `README.md` (if exists, fallback) — basic project info
 
-Store this context for skill generation in Step 2.7.
+Store this context for skill generation in Step 2.6.
 
 ### Step 2.4: Detect Tech Stacks
 
@@ -301,9 +301,7 @@ Add user-specified entries to `allow`.
 Write `{workspace}/.claude/settings.local.json` per template (empty `{}`).
 This file is gitignored.
 
-### Step 2.6: (intentionally folded into 2.5)
-
-### Step 2.7: Generate Per-Repo Skills
+### Step 2.6: Generate Per-Repo Skills
 
 **MANDATORY — load `references/templates/per-repo-skill.md`.**
 
@@ -313,7 +311,7 @@ template + repo AGENTS.md + Phase 1 interface discovery.
 
 Confirm short names with the user before writing (see template).
 
-### Step 2.8: Generate Architect Skill
+### Step 2.7: Generate Architect Skill
 
 **MANDATORY — load `references/templates/architect-skill.md`.**
 
@@ -321,7 +319,7 @@ Write `{workspace}/.claude/skills/architect/SKILL.md` from the template.
 Fill the Cross-Repo Interfaces section from Phase 1.6 and the Validation
 Checklist from the same discovery.
 
-### Step 2.9: Generate Team Skill
+### Step 2.8: Generate Team Skill
 
 **MANDATORY — load `references/templates/team-skill.md`.**
 
@@ -329,14 +327,14 @@ Write `{workspace}/.claude/skills/team/SKILL.md` from the template.
 Generate 2-3 example invocations relevant to this project from Linear
 issues and discovered interfaces.
 
-### Step 2.10: Generate CLAUDE.md
+### Step 2.9: Generate CLAUDE.md
 
 **MANDATORY — load `references/templates/claude-md.md`.**
 
 Write `{workspace}/.claude/CLAUDE.md` from the template. Fill placeholders
 from Linear data + Phase 1 discovery. Target under 100 lines.
 
-### Step 2.11: Create .gitignore
+### Step 2.10: Create .gitignore
 
 Write `{workspace}/.gitignore`:
 
@@ -354,7 +352,7 @@ architecture/
 .DS_Store
 ```
 
-### Step 2.12: Initialize Git and Commit
+### Step 2.11: Initialize Git and Commit
 
 ```bash
 cd {workspace}
