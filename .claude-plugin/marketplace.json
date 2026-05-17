@@ -1,13 +1,13 @@
 {
-  "name": "skills-sh",
+  "name": "deftly",
   "owner": {
     "name": "Barry Roodt"
   },
   "plugins": [
     {
-      "name": "skills-sh",
+      "name": "deftly",
       "source": ".",
-      "description": "Skills authored by Barry Roodt, distributed via skills.sh.",
+      "description": "Agent Skills authored by Barry Roodt.",
       "skills": "./skills"
     }
   ]

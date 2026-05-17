@@ -1,22 +1,22 @@
-# skills.sh
+# deftly
 
-A collection of Claude Code-compatible Skills authored by Barry Roodt and published to the [skills.sh](https://skills.sh) registry.
+A collection of [Agent Skills](https://github.com/anthropics/skills/tree/main/spec) authored by Barry Roodt. Skills follow the open Agent Skills spec and work with any compatible AI coding agent.
 
 ## Install
 
 ### Via skills.sh (any supported agent)
 
 ```bash
-npx skills add <owner>/skills.sh
+npx skills add barryroodt/deftly
 ```
 
-Replace `<owner>` with the GitHub owner of this repository. The skills.sh CLI installs every skill under `skills/` into your configured agent.
+The skills.sh CLI installs every skill under `skills/` into your configured agent.
 
 ### Via Claude Code plugin marketplace
 
 ```bash
-/plugin marketplace add <owner>/skills.sh
-/plugin install skills-sh@skills-sh
+/plugin marketplace add barryroodt/deftly
+/plugin install deftly@deftly
 ```
 
 ## Skills
@@ -25,7 +25,7 @@ This index lists every skill in `skills/`. Update it whenever you add or remove 
 
 | Skill | Description |
 | ----- | ----------- |
-| [`agent-team-review`](./skills/agent-team-review/) | Parallel multi-agent code review using Claude Code Agent Teams. |
+| [`agent-team-review`](./skills/agent-team-review/) | Parallel multi-agent code review using Agent Teams. |
 
 ## Authoring
 
@@ -42,7 +42,7 @@ The template lives in `template/SKILL.md`. See [Anthropic's Agent Skills spec](h
 ## Repository layout
 
 ```
-skills.sh/
+deftly/
 ├── .claude-plugin/marketplace.json   # Claude Code marketplace manifest
 ├── skills/                           # one folder per skill
 ├── template/SKILL.md                 # starter template
