@@ -1,9 +1,14 @@
-# Template: `.claude/CLAUDE.md`
+# Template: `AGENTS.md` (workspace root)
 
-Path: `{workspace}/.claude/CLAUDE.md`
+Path: `{workspace}/AGENTS.md`
 
-**Target: under 100 lines.** This loads into every session and teammate
-context window. Fill placeholders from Linear data + Phase 1 discovery.
+**Target: under 100 lines.** This is the canonical cross-agent workspace
+doc. Codex and Copilot read it natively; Gemini reads it when present;
+Claude Code reads it only via a `CLAUDE.md` bridge written by the
+`scaffold-claude-code-extensions` adapter (see M3).
+
+Fill placeholders from Linear data + Phase 1 discovery. Sections marked
+"agent-specific" are gated on which agents the user selected in Phase 0.5.
 
 ```
 # {Project Name}
@@ -25,10 +30,15 @@ Read ./architecture/LINEAR-PROJECT.md for current project status.
 
 ## Skills (Single Session)
 Invoke {list skills} for focused repo work. Each skill loads
-repo-specific context and conventions.
+repo-specific context and conventions. Skills live in `.agents/skills/`
+and are auto-discovered by Codex and Gemini; Claude Code reads them
+via the bridge created by the CC adapter.
 
-## Agent Teams (Parallel Work)
-Invoke /team to bootstrap a multi-repo agent team.
+## Agent Teams (Parallel Work) — Claude Code only
+{Include only if `claude-code` ∈ targets:}
+Invoke /team to bootstrap a multi-repo agent team. Requires
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `.claude/settings.json`
+(set by the CC adapter).
 
 ## Linear Project Tracking
 
