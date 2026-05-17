@@ -115,9 +115,18 @@ Present to user:
 - What needs adapting for the new workspace (project name, Linear URL,
   scope-specific rules — e.g. "rollout phase" vs "implementation phase")
 
-User decides: full replication (skip Phase 1.2-1.6, jump to Phase 2 with
-sibling as source) or partial (replicate skills/permissions, run fresh
-discovery for repos/interfaces).
+Ask the user explicitly:
+
+> "How should I use the sibling?
+> A) Full replication — copy repo list, skills, and permissions verbatim;
+>    skip Phase 1.2-1.6; jump to Phase 2 with sibling as source.
+> B) Partial — copy skills and permissions from sibling; run fresh
+>    Phase 1 discovery for repos and cross-repo interfaces.
+> C) Skip — ignore the sibling, run full Phase 1 discovery from scratch."
+
+Record the choice. A → continue to Step 0.4 then jump to Phase 2.1.
+B → continue to Step 0.4 then Phase 1.1. C → skip remainder of Phase 0,
+go to Phase 1.1.
 
 ### Step 0.4: Adapt, don't blindly copy
 Even with full replication, the following must be tailored to the new
