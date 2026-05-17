@@ -1,8 +1,13 @@
 ---
 name: scaffold-project-workspace
-description: Use when setting up a new multi-repo project workspace from a
-  Linear project, creating agent skills for coordinated repo work, or
-  bootstrapping Claude Code Agent Teams for cross-repo development.
+description: Scaffold and bootstrap a multi-repo project workspace from a
+  Linear project — clones repos, generates per-repo skills, writes
+  permissions, and produces architecture docs. Use when setting up a new
+  Linear project workspace, bootstrapping cross-repo Agent Teams, creating
+  agent skills for coordinated multi-repo work, or initializing a workspace
+  with `.claude/skills/` from a Linear project URL. Keywords: scaffold,
+  bootstrap workspace, multi-repo, Linear project, cross-repo, agent teams,
+  workspace setup, clone repos.
 ---
 
 # Multi-Repo Project Workspace Bootstrapper
