@@ -445,8 +445,19 @@ If improvements were identified:
 
 2. Wait for explicit user approval
 
-3. If approved, edit this skill file (the deftly source of truth):
-   `<deftly-repo>/skills/scaffold-project-workspace/SKILL.md`
+3. If approved, edit this skill file in its source repo (the deftly
+   plugin checkout — NOT the installed copy under
+   `~/.claude/plugins/`). Resolve the source path at runtime:
+
+   ```bash
+   # From this SKILL.md's directory, walk upward to the git root.
+   skill_dir="$(dirname "$(realpath <path-to-this-SKILL.md>)")"
+   repo_root="$(git -C "$skill_dir" rev-parse --show-toplevel)"
+   target="$repo_root/skills/scaffold-project-workspace/SKILL.md"
+   ```
+
+   Edit `$target`, not the installed plugin copy — the plugin cache is
+   overwritten on update and edits will be lost.
 
 4. Commit the change on a feature branch and open a PR — do not push
    directly to main.
