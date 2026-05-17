@@ -34,6 +34,24 @@ ready for both single-session and Agent Teams workflows.
 - `git` and `gh` CLI installed
 - SSH access to clone repositories
 
+### Fallback: Linear MCP unavailable
+
+If Linear MCP tools are not available (server unreachable, not
+configured), the skill still functions in manual mode. Phase 1.2
+becomes a user-supplied data step:
+
+> "Linear MCP unavailable. Paste the project metadata as markdown:
+> name, lead, status, description; one line per milestone with
+> completion %; one line per issue with title, status, PR URL.
+> I'll derive the repo list from the PR URLs."
+
+Phase 3.3 (LINEAR-PROJECT.md) is generated from the pasted markdown
+instead of live API data. Note in the document header that data is
+a snapshot from {date} and may drift.
+
+The same fallback applies if Notion MCP is unavailable: ask the user
+to paste fetched doc content or skip Phase 3.1.
+
 ## Anti-Patterns
 
 - **NEVER blind-write `.claude/settings.local.json`** — the Claude Code
