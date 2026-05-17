@@ -96,8 +96,8 @@ Adapter-specific NEVER lists (e.g. "never blind-write
 
 ## Templates (loaded on demand)
 
-Core templates live in `references/templates/`. Do NOT load them up
-front — each phase calls out the exact moment to load each one:
+Core templates live in `references/templates/`. Each phase calls out
+the exact moment to load each one:
 
 - `references/templates/per-repo-skill.md` — load before Step 2.6
 - `references/templates/architect-skill.md` — load before Step 2.7
@@ -105,9 +105,23 @@ front — each phase calls out the exact moment to load each one:
   (only when `claude-code` ∈ targets)
 - `references/templates/agents-md.md` — load before Step 2.9
 
-Adapter-owned templates (e.g. `.claude/settings.json` schema,
-`.codex/config.toml` schema) live in each adapter skill's
-`references/templates/` directory, not here.
+Other reference files (load only on the stated trigger):
+- `references/agent-paths.md` — load when resolving per-agent paths
+- `references/multi-target.md` — load at Step 2.5.5 only if Phase 0.5
+  returned >1 target
+- `references/sandbox-recovery.md` — load only if `git init` fails in
+  Step 3.4
+- `references/reflect.md` — load at Phase 4 only if the agent has
+  identified concrete improvements
+
+**Do NOT load:**
+- Any of the above up front. Load only at the stated trigger.
+- A reference file a second time in the same session — context already
+  has it. Re-loading wastes tokens.
+- Adapter-owned templates (`.claude/settings.json` schema,
+  `.codex/config.toml` schema, etc.) — those live in adapter skills'
+  `references/templates/` and load via the adapter, never the core.
+- Sibling-workspace files when running fresh (Phase 0 C-path).
 
 ## Routing
 
