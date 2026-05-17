@@ -1,11 +1,12 @@
 ---
 name: scaffold-project-workspace
-description: Scaffold and bootstrap a multi-repo project workspace from a
-  Linear project for any coding-agent CLI (Claude Code, Codex, Gemini,
-  Copilot) — clones repos, generates per-repo skills, writes the canonical
-  `AGENTS.md`, and produces architecture docs. Use when setting up a new
-  Linear project workspace, bootstrapping cross-repo agent coordination,
-  creating skills for multi-repo work, or initializing a workspace with
+description: Scaffold and bootstrap a multi-agent multi-repo project
+  workspace from a Linear project for any coding-agent CLI (Claude Code,
+  Codex, Gemini, Copilot) — clones repos, generates per-repo skills,
+  writes the canonical `AGENTS.md`, and produces architecture docs. Use
+  when setting up a new Linear project workspace, building a multi-agent
+  workspace, bootstrapping cross-repo agent coordination, creating
+  skills for multi-repo work, or initializing a workspace with
   `.agents/skills/` from a Linear project URL. Delegates per-agent
   permissions and bridge files to optional adapter skills
   (`scaffold-claude-code-extensions`, `scaffold-codex-extensions`,
