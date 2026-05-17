@@ -44,7 +44,11 @@ If the file does not exist, run first-time setup:
 
 ## Workflow
 
-1. **Determine the week range.** Default: current Monday through today.
+1. **Determine the week range.** Default: current Monday 00:00 local through today 23:59 local. Override when the user specifies a range:
+   - "last week" → previous Monday 00:00 through previous Sunday 23:59.
+   - "week of <date>" / "the week starting <date>" → Monday of that calendar week through the following Sunday.
+   - Explicit "from X to Y" → use those bounds verbatim.
+   - Resolve relative phrases against today's date; verify the computed Monday by name (`date -v-mon` or equivalent) rather than trusting arithmetic. Pass the resolved start/end dates into every subsequent step — do not recompute per query.
 2. **Linear: completed work.** `mcp__linear-server__list_issues` with `assignee: "me"`, `team: "{linear_team}"`, `state: "completed"`, `updatedAt` >= Monday. Post-filter to issues where `completedAt` falls within the target week.
 3. **Linear: in-flight work.** `mcp__linear-server__list_issues` with `assignee: "me"`, `team: "{linear_team}"`, `state: "started"`.
 4. **Linear: tickets I created for others.** `mcp__linear-server__list_issues` with `team: "{linear_team}"`, `createdAt` >= Monday. Filter to issues where `createdById` matches `{linear_user_id}` but `assigneeId` does not (or is null).
