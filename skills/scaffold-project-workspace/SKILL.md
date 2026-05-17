@@ -1,25 +1,50 @@
 ---
 name: scaffold-project-workspace
 description: Scaffold and bootstrap a multi-repo project workspace from a
-  Linear project — clones repos, generates per-repo skills, writes
-  permissions, and produces architecture docs. Use when setting up a new
-  Linear project workspace, bootstrapping cross-repo Agent Teams, creating
-  agent skills for coordinated multi-repo work, or initializing a workspace
-  with `.claude/skills/` from a Linear project URL.
+  Linear project for any coding-agent CLI (Claude Code, Codex, Gemini,
+  Copilot) — clones repos, generates per-repo skills, writes the canonical
+  `AGENTS.md`, and produces architecture docs. Use when setting up a new
+  Linear project workspace, bootstrapping cross-repo agent coordination,
+  creating skills for multi-repo work, or initializing a workspace with
+  `.agents/skills/` from a Linear project URL. Delegates per-agent
+  permissions and bridge files to optional adapter skills
+  (`scaffold-claude-code-extensions`, `scaffold-codex-extensions`,
+  `scaffold-gemini-extensions`, `scaffold-copilot-extensions`).
 ---
 
-# Multi-Repo Project Workspace Bootstrapper
+# Multi-Agent Multi-Repo Project Workspace Bootstrapper
 
 ## What this produces
 
 A `{workspace}/` containing:
-- `.claude/CLAUDE.md`, `.claude/settings.json`, `.claude/settings.local.json`
-- `.claude/skills/{architect,team,<repo>...}/SKILL.md`
+- `AGENTS.md` (canonical cross-agent workspace doc — Codex, Copilot,
+  Gemini read this natively; Claude Code reads via a `CLAUDE.md` bridge
+  written by the CC adapter)
+- `.agents/skills/{architect,team,<repo>...}/SKILL.md` (de-facto
+  cross-agent skills directory — auto-discovered by Codex and Gemini;
+  bridged into `.claude/skills/` by the CC adapter)
+- Per-target adapter outputs (see Phase 0.5):
+  - Claude Code: `.claude/settings.json`, `.claude/settings.local.json`,
+    `.claude/CLAUDE.md` bridge, Agent Teams flag, `/team` + `/architect`
+    slash skills
+  - Codex: `.codex/config.toml` permissions
+  - Gemini: `.gemini/settings.json` trust + tool gates
+  - Copilot: (no workspace state needed beyond `AGENTS.md`)
 - `architecture/{ARCHITECTURE,LINEAR-PROJECT}.md` (own git repo)
 - One cloned repo dir per repo discovered from the Linear project
-- `.gitignore` excluding the cloned repos and personal settings
+- `.gitignore` excluding the cloned repos and per-adapter personal
+  settings (each adapter contributes its own gitignore entries)
 
-**Not for:** Single-repo projects, projects without a Linear project, runtime orchestration (use the generated `/architect` or `/team` skills for that).
+**Not for:** Single-repo projects, projects without a Linear project,
+runtime orchestration (use the generated `/architect` or `/team` skills
+for that — `/team` only when `claude-code` ∈ targets).
+
+## Per-agent paths reference
+
+Before writing any files, consult
+`references/agent-paths.md` for the authoritative matrix of per-agent
+paths, permissions models, and skill-loading mechanisms. The phases
+below reference rows of that matrix; do not hard-code paths.
 
 ## Prerequisites
 
@@ -48,23 +73,25 @@ to paste fetched doc content or skip Phase 3.1.
 
 ## Anti-Patterns
 
-- **NEVER blind-write `.claude/settings.local.json`** — the Claude Code
-  harness auto-creates it with session permissions. Clobbering wipes
-  them silently. Always read first, then merge or skip.
 - **NEVER skip the pre-existing dir check in Step 2.1** — `{workspace}`
   may contain a partial `.git`, user files, or environment-seeded
   overrides. Writing without listing first causes silent data loss.
 - **NEVER `git add .` from the workspace root** — `architecture/` is a
   nested git repo (initialized in Step 3.4). A blanket add embeds it as
   a submodule reference and pollutes the workspace history. Use
-  explicit paths: `git add .gitignore .claude/`.
-- **NEVER use `rm -rf` to clean up partial scaffolds** — the default
-  deny list blocks it; the command will fail mid-cleanup leaving a
-  worse state. Use `find <path> -delete` for targeted cleanup of
-  failed `.git/` dirs (see Step 3.4 sandbox note).
-- **NEVER commit `.claude/settings.local.json`** — it carries personal
-  overrides (local MCP servers, experimental flags). The generated
-  `.gitignore` already excludes it; double-check before `git add`.
+  explicit paths: `git add .gitignore AGENTS.md .agents/` plus any
+  adapter-owned paths (`.claude/`, `.codex/`, `.gemini/`).
+- **NEVER use `rm -rf` to clean up partial scaffolds** — Claude Code's
+  default deny list blocks it. Other agents may permit it, but staying
+  uniform avoids surprises. Use `find <path> -delete` for targeted
+  cleanup of failed `.git/` dirs (see Step 3.4 sandbox note).
+- **NEVER skip Phase 0.5** — running without explicit target selection
+  produces a workspace that fits no agent cleanly. Adapters can be
+  added later, but their outputs differ; retrofitting causes drift.
+- **NEVER hard-code agent paths** — always read
+  `references/agent-paths.md` and let the per-target adapter (M3-M5)
+  own the agent-specific file writes. The core skill writes only
+  cross-agent artifacts: `AGENTS.md`, `.agents/skills/`, `architecture/`.
 - **NEVER edit this skill (Phase 4) without showing the diff and
   getting approval** — the agent generating workspaces shouldn't
   silently mutate the workflow that generated them.
@@ -72,16 +99,23 @@ to paste fetched doc content or skip Phase 3.1.
   gap per edit; present multiple findings as a list for single approval,
   but don't bundle them into one rewrite.
 
+Adapter-specific NEVER lists (e.g. "never blind-write
+`.claude/settings.local.json`") live in each adapter skill, not here.
+
 ## Templates (loaded on demand)
 
-Five output templates live in `references/templates/`. Do NOT load them up
+Core templates live in `references/templates/`. Do NOT load them up
 front — each phase calls out the exact moment to load each one:
 
-- `references/templates/settings-json.md` — load before Step 2.5
 - `references/templates/per-repo-skill.md` — load before Step 2.6
 - `references/templates/architect-skill.md` — load before Step 2.7
 - `references/templates/team-skill.md` — load before Step 2.8
-- `references/templates/claude-md.md` — load before Step 2.9
+  (only when `claude-code` ∈ targets)
+- `references/templates/agents-md.md` — load before Step 2.9
+
+Adapter-owned templates (e.g. `.claude/settings.json` schema,
+`.codex/config.toml` schema) live in each adapter skill's
+`references/templates/` directory, not here.
 
 ## Phase 0: SIBLING SHORTCUT (optional)
 
@@ -100,12 +134,21 @@ next to `foo`), inspect the sibling first before walking full discovery.
 - If user explicitly named a sibling, use that.
 
 ### Step 0.2: Inspect sibling
-Read from sibling:
-- `.claude/skills/*/SKILL.md` — repo skill set
-- `.claude/settings.json` — permissions baseline
-- `.claude/CLAUDE.md` — workspace structure
+Read from sibling, in this order (skip what's absent):
+- `AGENTS.md` (workspace root) — workspace structure; fall back to
+  `.claude/CLAUDE.md` or `GEMINI.md` if AGENTS.md not present
+- `.agents/skills/*/SKILL.md` — repo skill set; fall back to
+  `.claude/skills/*/SKILL.md` for legacy CC-only siblings
+- Per-adapter config files for permissions baseline:
+  - `.claude/settings.json` (CC)
+  - `.codex/config.toml` (Codex)
+  - `.gemini/settings.json` (Gemini)
 - `.gitignore` — cloned repo list
 - Per-repo remote URLs: `git -C <sibling>/<repo> remote get-url origin`
+
+Infer which target agents the sibling was scaffolded for from which
+config files exist, and propose the same set in Phase 0.5 (the user
+can adjust).
 
 ### Step 0.3: Confirm replication scope
 Present to user:
@@ -131,14 +174,61 @@ go to Phase 1.1.
 ### Step 0.4: Adapt, don't blindly copy
 Even with full replication, the following must be tailored to the new
 workspace and NOT inherited verbatim:
-- `CLAUDE.md` project name, Linear URL, scope-specific rules (e.g. rollout
-  may have "no production deploys" rules absent from implementation)
+- `AGENTS.md` project name, Linear URL, scope-specific rules (e.g.
+  rollout may have "no production deploys" rules absent from
+  implementation)
 - `architect` skill identity and rollout/phase-specific coordination
 - `architecture/ARCHITECTURE.md` — same system map but reframed scope
 - `architecture/LINEAR-PROJECT.md` — new project's milestones + issues
 
-If using sibling shortcut, jump to Phase 2.1 after this step. Phase 1
-becomes "fetch new project's Linear data + Notion docs only".
+If using sibling shortcut, run Phase 0.5 (target selection) next, then
+jump to Phase 2.1. Phase 1 becomes "fetch new project's Linear data +
+Notion docs only".
+
+## Phase 0.5: SELECT TARGET AGENTS
+
+> Before scaffolding, ask: which coding-agent CLIs will use this
+> workspace? The answer drives which adapter skills run and which
+> files get written.
+
+### Step 0.5.1: Multi-select target agents
+
+Ask the user:
+
+> "Which coding-agent CLIs will use this workspace? Select all that apply:
+>
+> 1) Claude Code (`claude` CLI)
+> 2) Codex (`codex` CLI)
+> 3) Gemini CLI (`gemini`)
+> 4) Copilot CLI (`gh copilot`)
+> 5) Other / custom — describe it
+>
+> Default if you skip: just Claude Code."
+
+Record the set of targets. This drives which adapter skills are invoked
+in Steps 2.5 and onward.
+
+### Step 0.5.2: Confirm adapter availability
+
+For each target ∈ {claude-code, codex, gemini, copilot}, confirm the
+corresponding adapter skill exists in the deftly plugin:
+
+| Target      | Adapter skill                          |
+|-------------|----------------------------------------|
+| claude-code | `scaffold-claude-code-extensions`      |
+| codex       | `scaffold-codex-extensions`            |
+| gemini      | `scaffold-gemini-extensions`           |
+| copilot     | `scaffold-copilot-extensions`          |
+
+If an adapter is missing for a selected target, warn the user:
+
+> "Adapter `<name>` not found. Core scaffold will write `AGENTS.md` and
+> `.agents/skills/` only — you'll need to add agent-specific permissions
+> manually. Proceed anyway? (y/n)"
+
+If the user declines, drop that target from the set and continue. If
+all targets are dropped, abort with a message pointing the user to the
+spec.
 
 ## Phase 1: DISCOVER
 
@@ -222,7 +312,8 @@ of asking for each pair manually.
 of `{workspace}` if it exists. The dir may already contain:
 - A partial `.git` (workspace already initialized)
 - Environment-seeded files like `AGENTS.override.md` (subspace) or
-  `.claude/settings.local.json` (Claude Code session permissions)
+  agent-specific session files (e.g. `.claude/settings.local.json`
+  auto-created by the Claude Code harness)
 - In-progress user files
 
 If non-empty:
@@ -230,16 +321,20 @@ If non-empty:
 2. Confirm scaffolding will preserve unrelated files and only add the
    expected scaffold artifacts.
 3. Never delete or overwrite files outside the scaffold's own outputs.
-4. For files the scaffold owns but already exist (e.g. `settings.local.json`
-   auto-created by the harness), **read first, then merge or skip** —
-   don't blind-write.
+4. For files the scaffold or its adapters own but already exist (e.g.
+   `settings.local.json` auto-created by the CC harness), **read first,
+   then merge or skip** — don't blind-write.
 
 ```bash
-mkdir -p {workspace}/.claude/skills
+mkdir -p {workspace}/.agents/skills
 mkdir -p {workspace}/architecture
 ```
 
-Note: Per-repo skill directories (`skills/{name}/`) are created in Step 2.6.
+Per-target adapter directories (`.claude/`, `.codex/`, `.gemini/`) are
+created by the respective adapter skill in Step 2.5, not here.
+
+Note: Per-repo skill directories (`.agents/skills/{name}/`) are created
+in Step 2.6.
 
 ### Step 2.2: Clone Repositories
 
@@ -255,9 +350,10 @@ After cloning, verify each repo by listing its top-level contents.
 ### Step 2.3: Read Repo Context
 
 For each cloned repo, read:
-1. `AGENTS.md` (if exists) — authoritative conventions
-2. `.claude/CLAUDE.md` (if exists) — additional context
-3. `README.md` (if exists, fallback) — basic project info
+1. `AGENTS.md` (if exists) — authoritative conventions (cross-agent)
+2. `.claude/CLAUDE.md` (if exists) — Claude Code conventions
+3. `GEMINI.md` (if exists) — Gemini-specific conventions
+4. `README.md` (if exists, fallback) — basic project info
 
 Store this context for skill generation in Step 2.6.
 
@@ -280,63 +376,95 @@ For each cloned repo, check for marker files and record detected stacks:
 
 Present detected stacks to the user for confirmation.
 
-### Step 2.5: Generate settings.json + settings.local.json
+### Step 2.5: Invoke per-target adapter skills
 
-**MANDATORY — load `references/templates/settings-json.md` before writing.**
+For each target selected in Phase 0.5, invoke the corresponding adapter
+skill, passing the detected tech-stack rules from Step 2.4 plus user
+answers to the prompts below. Adapters own all agent-specific file
+writes (permissions, env flags, bridge files).
 
-Write `{workspace}/.claude/settings.json` from the template base. Append
-the tech-stack allow rules from Step 2.4 to the `allow` array.
+Before invoking adapters, gather shared inputs:
 
-Then ask:
-> "Are there deploy commands specific to your tooling I should also deny?
+> "Are there deploy commands specific to your tooling I should deny?
 > (e.g. `wrangler deploy *`, `kraft deploy *`, `fly deploy *`)"
 
-Add user-specified deploy denials to the `deny` list.
-
-Also ask:
 > "Are there additional WebFetch domains or MCP servers to allow?"
 
-Add user-specified entries to `allow`.
+Pass both answers + the tech-stack table to every adapter. Each adapter
+translates them into its own permission schema:
 
-Write `{workspace}/.claude/settings.local.json` per template (empty `{}`).
-This file is gitignored.
+| Target      | Adapter invocation                                        |
+|-------------|-----------------------------------------------------------|
+| claude-code | `scaffold-claude-code-extensions` → `.claude/settings.json`, `.claude/settings.local.json`, `CLAUDE.md` bridge, Agent Teams flag |
+| codex       | `scaffold-codex-extensions` → `.codex/config.toml`        |
+| gemini      | `scaffold-gemini-extensions` → `.gemini/settings.json`    |
+| copilot     | `scaffold-copilot-extensions` → no workspace state needed |
+
+If an adapter is missing (warned in Step 0.5.2), skip the invocation
+and continue. The core scaffold still produces a usable `AGENTS.md` +
+`.agents/skills/` baseline for that agent.
 
 ### Step 2.6: Generate Per-Repo Skills
 
 **MANDATORY — load `references/templates/per-repo-skill.md`.**
 
 For each cloned repo, create
-`{workspace}/.claude/skills/{short-name}/SKILL.md` filled from the
+`{workspace}/.agents/skills/{short-name}/SKILL.md` filled from the
 template + repo AGENTS.md + Phase 1 interface discovery.
 
 Confirm short names with the user before writing (see template).
+
+Codex and Gemini auto-discover skills at `.agents/skills/`. Claude Code
+does not — the CC adapter (M3) creates a `.claude/skills/` bridge
+(symlink or copy) so CC discovers the same set.
 
 ### Step 2.7: Generate Architect Skill
 
 **MANDATORY — load `references/templates/architect-skill.md`.**
 
-Write `{workspace}/.claude/skills/architect/SKILL.md` from the template.
+Write `{workspace}/.agents/skills/architect/SKILL.md` from the template.
 Fill the Cross-Repo Interfaces section from Phase 1.6 and the Validation
 Checklist from the same discovery.
 
-### Step 2.8: Generate Team Skill
+### Step 2.8: Generate Team Skill (Claude Code only)
+
+Skip this step if `claude-code` ∉ targets — Codex/Gemini/Copilot lack
+the Agent Teams subagent-dispatch primitive, so the team skill has no
+runtime to drive there. The asymmetry is intentional; do not generate
+a degraded team skill for non-CC targets.
+
+If `claude-code` ∈ targets:
 
 **MANDATORY — load `references/templates/team-skill.md`.**
 
-Write `{workspace}/.claude/skills/team/SKILL.md` from the template.
+Write `{workspace}/.agents/skills/team/SKILL.md` from the template.
 Generate 2-3 example invocations relevant to this project from Linear
 issues and discovered interfaces.
 
-### Step 2.9: Generate CLAUDE.md
+### Step 2.9: Generate AGENTS.md
 
-**MANDATORY — load `references/templates/claude-md.md`.**
+**MANDATORY — load `references/templates/agents-md.md`.**
 
-Write `{workspace}/.claude/CLAUDE.md` from the template. Fill placeholders
-from Linear data + Phase 1 discovery. Target under 100 lines.
+Write `{workspace}/AGENTS.md` (workspace root, NOT `.claude/CLAUDE.md`)
+from the template. Fill placeholders from Linear data + Phase 1
+discovery. Target under 100 lines.
+
+Conditional sections:
+- Include the "Agent Teams (Parallel Work)" section only when
+  `claude-code` ∈ targets.
+- Otherwise drop that section entirely; mentioning a primitive that's
+  not available creates a misleading workspace doc.
+
+The CC adapter (M3) handles the `CLAUDE.md` bridge so Claude Code reads
+the same content.
 
 ### Step 2.10: Create .gitignore
 
-Write `{workspace}/.gitignore`:
+Write `{workspace}/.gitignore` from the core baseline. Each adapter
+appends its own personal-overrides entries (e.g. CC adapter appends
+`.claude/settings.local.json` and `CLAUDE.local.md`).
+
+Core baseline:
 
 ```
 # Cloned repos (tracked independently)
@@ -345,21 +473,26 @@ Write `{workspace}/.gitignore`:
 # Architecture has its own git repo
 architecture/
 
-# Personal settings
-.claude/settings.local.json
-
 # OS files
 .DS_Store
 ```
+
+After core writes the baseline, each invoked adapter appends its own
+section. The final file is the union.
 
 ### Step 2.11: Initialize Git and Commit
 
 ```bash
 cd {workspace}
 git init
-git add .gitignore .claude/
-git commit -m "init project workspace with skills and permissions"
+git add .gitignore AGENTS.md .agents/
+{for each adapter that produced files, add its paths — e.g. .claude/ for CC, .codex/ for Codex, .gemini/ for Gemini}
+git commit -m "init project workspace ({comma-separated target list})"
 ```
+
+Adapter paths are determined by which targets were selected in Phase
+0.5; never `git add .` because `architecture/` is a nested git repo
+(see Anti-Patterns).
 
 ## Phase 3: DOCUMENT
 
@@ -414,40 +547,63 @@ git add -A
 git commit -m "init architecture docs for {project-name} workspace"
 ```
 
-**Sandbox note:** If `{workspace}/.claude/settings.json` has
-`sandbox.enabled: true`, plain `git init` may fail copying default hooks
-into `architecture/.git/`. Symptoms: `Operation not permitted` writing
-to `.git/hooks/...sample` or `.git/config`. Two recovery options:
+**Sandbox note:** Agent sandboxes may block `git init` from copying
+default hooks into `architecture/.git/`. Symptoms across agents:
+- Claude Code with `sandbox.enabled: true` in `.claude/settings.json`:
+  `Operation not permitted` writing to `.git/hooks/...sample` or
+  `.git/config`. Recover with `git init --template=` (empty template);
+  if still blocked, escalate to `dangerouslyDisableSandbox: true` on
+  the Bash tool.
+- Codex with `[sandbox_workspace_write]` policy: similar failure mode.
+  Recover by running this step outside the sandbox, or with
+  `--sandbox=workspace-write` if policy permits.
+- Gemini under Trusted Folders: usually no block, but verify the
+  workspace is trusted.
+- Copilot CLI: no sandbox layer at this writing.
 
-1. Run `git init --template=` (empty template) to skip hook templates.
-2. If still blocked, run the init+commit step with sandbox disabled
-   (e.g. `dangerouslyDisableSandbox: true` on Claude Code's Bash tool).
-
-Prefer option 1 first. Only escalate to option 2 if writes to
-`architecture/.git/config` are still blocked. Clean up any partial
-`.git/` directory (use `find ... -delete`, NOT `rm -rf` which is denied
-by default settings) before retrying.
+Prefer the empty-template option first across all agents. Clean up any
+partial `.git/` directory with `find ... -delete` (NOT `rm -rf` —
+denied by CC's default settings) before retrying.
 
 ### Step 3.5: Final Verification
 
-1. List the full workspace structure (2-3 levels deep)
-2. Confirm fixed files exist:
-   - `.claude/CLAUDE.md`
-   - `.claude/settings.json`
-   - `.claude/settings.local.json`
-   - `.claude/skills/architect/SKILL.md`
-   - `.claude/skills/team/SKILL.md`
+1. List the full workspace structure (2-3 levels deep).
+
+2. Confirm **core** files exist (always required):
+   - `AGENTS.md`
+   - `.agents/skills/architect/SKILL.md`
+   - `.agents/skills/team/SKILL.md` (only if `claude-code` ∈ targets)
    - `architecture/ARCHITECTURE.md`
    - `architecture/LINEAR-PROJECT.md`
    - `.gitignore`
-3. Confirm per-repo skills: list `.claude/skills/` and verify a
+
+3. Confirm per-repo skills: list `.agents/skills/` and verify a
    `{short-name}/SKILL.md` exists for every entry in the cloned-repo
    list from Step 2.2. Any mismatch (extra skill dir without a repo,
    or repo without a skill dir) is a bug — flag to the user before
    continuing.
-4. Confirm all repos cloned successfully (one `git -C <repo> rev-parse HEAD`
-   per repo; non-zero exit = clone failed).
-5. Present summary to user.
+
+4. **Per-target adapter checks** — for each adapter invoked in Step
+   2.5, run its verification assertions. The adapter owns the
+   assertion list; the core skill only invokes it. Expected per-target
+   artifacts:
+
+   | Target      | Adapter-owned files to confirm                            |
+   |-------------|-----------------------------------------------------------|
+   | claude-code | `.claude/settings.json`, `.claude/settings.local.json`, `.claude/CLAUDE.md` (bridge), `.claude/skills/` (bridge to `.agents/skills/`) |
+   | codex       | `.codex/config.toml`                                       |
+   | gemini      | `.gemini/settings.json` (if generated)                     |
+   | copilot     | (none — AGENTS.md alone is sufficient)                     |
+
+   If an adapter was skipped (missing or user-declined in Step 0.5.2),
+   note that in the summary.
+
+5. Confirm all repos cloned successfully (one
+   `git -C <repo> rev-parse HEAD` per repo; non-zero exit = clone
+   failed).
+
+6. Present summary to user — list targets, files written, adapters
+   invoked, and any skipped steps.
 
 ## Phase 4: REFLECT
 
@@ -479,8 +635,9 @@ If improvements were identified:
 2. Wait for explicit user approval
 
 3. If approved, edit this skill file in its source repo (the deftly
-   plugin checkout — NOT the installed copy under
-   `~/.claude/plugins/`). Resolve the source path at runtime:
+   plugin checkout — NOT the installed copy in any agent's plugin
+   cache: `~/.claude/plugins/` for Claude Code, `~/.codex/plugins/`
+   for Codex, etc.). Resolve the source path at runtime:
 
    ```bash
    # From this SKILL.md's directory, walk upward to the git root.
