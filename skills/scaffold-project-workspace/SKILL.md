@@ -539,23 +539,10 @@ git add -A
 git commit -m "init architecture docs for {project-name} workspace"
 ```
 
-**Sandbox note:** Agent sandboxes may block `git init` from copying
-default hooks into `architecture/.git/`. Symptoms across agents:
-- Claude Code with `sandbox.enabled: true` in `.claude/settings.json`:
-  `Operation not permitted` writing to `.git/hooks/...sample` or
-  `.git/config`. Recover with `git init --template=` (empty template);
-  if still blocked, escalate to `dangerouslyDisableSandbox: true` on
-  the Bash tool.
-- Codex with `[sandbox_workspace_write]` policy: similar failure mode.
-  Recover by running this step outside the sandbox, or with
-  `--sandbox=workspace-write` if policy permits.
-- Gemini under Trusted Folders: usually no block, but verify the
-  workspace is trusted.
-- Copilot CLI: no sandbox layer at this writing.
-
-Prefer the empty-template option first across all agents. Clean up any
-partial `.git/` directory with `find ... -delete` (NOT `rm -rf` —
-denied by CC's default settings) before retrying.
+**Sandbox note:** Agent sandboxes can block `git init` from copying
+default hooks. If `git init` fails, **load
+`references/sandbox-recovery.md`** for per-agent symptoms and recovery
+order. If it succeeded, ignore.
 
 ### Step 3.5: Final Verification
 
