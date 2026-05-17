@@ -7,6 +7,16 @@ description: Generates a weekly recap markdown report from Linear (tickets), Git
 
 Generates a summary of the week's work by pulling from Linear, Notion, and Github.
 
+## Never
+
+- **Never use `mergedAt` in `gh search prs --json`** — not a valid field; the call fails silently. Use `state == "merged"` instead.
+- **Never pass `issueId` to `mcp__linear-server__get_issue`** — parameter is `id`. Wrong key returns an error rather than the issue.
+- **Never write `!=` inside `jq` filters in bash** — `!` triggers history expansion and mangles the command. Use `| not`.
+- **Never invent a resolution for an investigation ticket** — if the ticket doesn't document one, write "resolution not documented" rather than guessing from the title.
+- **Never guess at blockers for in-flight items** — check the ticket or ask the user.
+- **Never name a day of the week without verifying against the calendar** — events at the start of the week did not necessarily happen on Monday.
+- **Never inflate light weeks with trivial items** (config bumps, typo fixes) — skip them unless there's nothing else to report.
+
 ## Identity
 
 Read identity from `~/.config/weekly-recap/identity.yaml`. Fields:
