@@ -58,12 +58,5 @@ servers, merging both into the appropriate lists before writing.
 }
 ```
 
-## settings.local.json
-
-Write `.claude/settings.local.json` as a minimal file for personal
-overrides that shouldn't be committed (e.g. local MCP servers,
-experimental flags). Gitignored.
-
-```json
-{}
-```
+`settings.local.json` is handled by the adapter's Step 2 with
+read-first logic — do not duplicate that here.
