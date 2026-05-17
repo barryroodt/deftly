@@ -109,6 +109,21 @@ Adapter-owned templates (e.g. `.claude/settings.json` schema,
 `.codex/config.toml` schema) live in each adapter skill's
 `references/templates/` directory, not here.
 
+## Routing
+
+```
+Phase 0  sibling workspace named or detected? → inspect → A (full copy) | B (partial) | C (skip)
+                                                   A → jump to Phase 2.1
+                                                   B → Phase 0.5 → Phase 1.1
+                                                   C → Phase 0.5
+Phase 0.5  multi-select target agents (claude-code / codex / gemini / copilot)
+Phase 1  Linear MCP up?       → Phase 1.2 native fetch
+         Linear MCP down/none → manual-paste fallback
+Phase 2  scaffold (dirs, clones, stacks, adapters, skills, AGENTS.md, gitignore, git init)
+Phase 3  document (fetched docs, ARCHITECTURE.md, LINEAR-PROJECT.md, verify)
+Phase 4  reflect (optional skill self-improvement)
+```
+
 ## Phase 0: SIBLING SHORTCUT (optional)
 
 > Before walking discovery, ask: is there a sibling workspace whose
