@@ -26,6 +26,7 @@ This index lists every skill in `skills/`. Update it whenever you add or remove 
 | Skill | Description |
 | ----- | ----------- |
 | [`agent-team-review`](./skills/agent-team-review/) | Parallel multi-agent code review using Agent Teams. |
+| [`scaffold-project-workspace`](./skills/scaffold-project-workspace/) | Bootstraps a multi-repo project workspace from a Linear project — clones repos, generates per-repo skills, writes permissions, produces architecture docs. |
 | [`weekly-review`](./skills/weekly-review/) | Generates a weekly recap from Linear, Notion, and GitHub activity. |
 
 ## Authoring
