@@ -79,7 +79,6 @@ If the file does not exist, run first-time setup:
 
 - In-progress Linear issues and open PRs as a unified view, with both links where related.
 - Short status note for each (e.g. "in review", "parked behind X", "deprioritized in favor of X").
-- Do not guess at blockers — check the ticket or ask.
 
 ### Reviews
 
@@ -109,8 +108,6 @@ If the file does not exist, run first-time setup:
 - Casual, factual
 - Every section opens with 1-2 sentences of prose summary before its list/table. Section intros summarize the _substance_ of the work, not the inventory or the authors. "Mostly ppg-conductor and unikraft image fixes — tier config, per-region image selection, and a TLS crash in the prisma_postgres extension" is good. "I shipped 13 issues across three areas", "I reviewed PRs across six repositories", and "Reviewed mostly Barry's fixes and a few cross-team PRs" are all bad — counts, lists, and attributions are not summaries of what changed.
 - Emphasize what changed or shipped, not activity
-- When referring to a date by day name in prose, verify the day of week against the calendar. Do not assume events at the start of the week happened on Monday.
-- Skip trivial items (config bumps, typo fixes) unless there's nothing else to report. Don't inflate light weeks.
 - Done and In Flight are always present; if empty, keep the heading and note it
 - Reviews, Docs written, and Tickets created are skipped when empty
 - Use markdown link syntax for all links
