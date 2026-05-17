@@ -1,0 +1,14 @@
+{
+  "name": "skills-sh",
+  "owner": {
+    "name": "Barry Roodt"
+  },
+  "plugins": [
+    {
+      "name": "skills-sh",
+      "source": ".",
+      "description": "Skills authored by Barry Roodt, distributed via skills.sh.",
+      "skills": "./skills"
+    }
+  ]
+}
