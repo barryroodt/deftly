@@ -67,6 +67,12 @@ to paste fetched doc content or skip Phase 3.1.
 - **NEVER commit `.claude/settings.local.json`** — it carries personal
   overrides (local MCP servers, experimental flags). The generated
   `.gitignore` already excludes it; double-check before `git add`.
+- **NEVER edit this skill (Phase 4) without showing the diff and
+  getting approval** — the agent generating workspaces shouldn't
+  silently mutate the workflow that generated them.
+- **NEVER batch unrelated improvements in Phase 4** — fix one specific
+  gap per edit; present multiple findings as a list for single approval,
+  but don't bundle them into one rewrite.
 
 ## Templates (loaded on demand)
 
@@ -491,7 +497,4 @@ If improvements were identified:
 If no improvements identified, say so:
 > "Setup completed cleanly — no skill improvements needed."
 
-### Guard Rails
-- NEVER edit this skill without showing the diff and getting approval
-- Changes should be minimal — fix the specific gap, don't refactor
-- If multiple improvements found, present as a batch for single approval
+(See top-level **Anti-Patterns** for the Phase 4 NEVERs.)
