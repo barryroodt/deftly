@@ -238,8 +238,8 @@ spec.
 
 ### Step 1.1: Accept Linear Project URL
 
-Ask the user for the Linear project URL. Example:
-`https://linear.app/<org-slug>/project/<project-slug>/overview`
+Ask the user for the Linear project URL (form
+`https://linear.app/<org>/project/<slug>/overview`).
 
 ### Step 1.2: Fetch Linear Project Details
 
@@ -338,24 +338,14 @@ in Step 2.6.
 
 ### Step 2.2: Clone Repositories
 
-For each repo in the discovered list:
-
-```bash
-cd {workspace}
-git clone {repo-ssh-url}
-```
-
-After cloning, verify each repo by listing its top-level contents.
+`git clone` each discovered repo into `{workspace}`. Verify each
+clone by listing its top-level contents.
 
 ### Step 2.3: Read Repo Context
 
-For each cloned repo, read:
-1. `AGENTS.md` (if exists) — authoritative conventions (cross-agent)
-2. `.claude/CLAUDE.md` (if exists) — Claude Code conventions
-3. `GEMINI.md` (if exists) — Gemini-specific conventions
-4. `README.md` (if exists, fallback) — basic project info
-
-Store this context for skill generation in Step 2.6.
+For each cloned repo, read (in order, skip absent): `AGENTS.md`,
+`.claude/CLAUDE.md`, `GEMINI.md`, `README.md`. Store context for skill
+generation in Step 2.6.
 
 ### Step 2.4: Detect Tech Stacks
 
