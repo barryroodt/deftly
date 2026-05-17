@@ -12,20 +12,16 @@ description: Scaffold and bootstrap a multi-repo project workspace from a
 
 # Multi-Repo Project Workspace Bootstrapper
 
-## Overview
+## What this produces
 
-Guided workflow to create a unified project workspace from a Linear project.
-Discovers repos, fetches documentation, scaffolds folder structure, generates
-Claude Code agent skills, and configures permissions — producing a workspace
-ready for both single-session and Agent Teams workflows.
+A `{workspace}/` containing:
+- `.claude/CLAUDE.md`, `.claude/settings.json`, `.claude/settings.local.json`
+- `.claude/skills/{architect,team,<repo>...}/SKILL.md`
+- `architecture/{ARCHITECTURE,LINEAR-PROJECT}.md` (own git repo)
+- One cloned repo dir per repo discovered from the Linear project
+- `.gitignore` excluding the cloned repos and personal settings
 
-## When to Use
-
-- Setting up a new project workspace for a Linear project
-- Creating agent skills for multi-repo coordination
-- Bootstrapping Claude Code Agent Teams for cross-repo development
-
-**Not for:** Single-repo projects, projects without a Linear project, runtime orchestration (use the generated /architect or /team skills for that).
+**Not for:** Single-repo projects, projects without a Linear project, runtime orchestration (use the generated `/architect` or `/team` skills for that).
 
 ## Prerequisites
 
