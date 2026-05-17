@@ -376,12 +376,15 @@ For each external document fetched in Phase 1:
 
 ### Step 3.2: Write ARCHITECTURE.md
 
-Write `{workspace}/architecture/ARCHITECTURE.md` containing:
+Write `{workspace}/architecture/ARCHITECTURE.md` containing the
+following sections — include each only where it applies to the
+discovered system; omit empty ones rather than ship placeholders:
 
 1. **System Overview** — text-based diagram showing all repos and their roles
 2. **Repository Responsibilities** — table with repo, language, and primary role
 3. **Data Flow** — how data moves between repos (text arrows)
-4. **Cross-Repo Interface Contracts** — detailed contracts from discovery:
+4. **Cross-Repo Interface Contracts** — detailed contracts from discovery,
+   choose the subset that matches the system:
    - API endpoints (HTTP method, path, request/response)
    - RPC methods (name, parameters, return type)
    - SQL functions (signature, who calls them)
