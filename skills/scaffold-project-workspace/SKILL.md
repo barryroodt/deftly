@@ -202,25 +202,16 @@ in Steps 2.5 and onward.
 
 ### Step 0.5.2: Confirm adapter availability
 
-For each target ∈ {claude-code, codex, gemini, copilot}, confirm the
-corresponding adapter skill exists in the deftly plugin:
-
-| Target      | Adapter skill                          |
-|-------------|----------------------------------------|
-| claude-code | `scaffold-claude-code-extensions`      |
-| codex       | `scaffold-codex-extensions`            |
-| gemini      | `scaffold-gemini-extensions`           |
-| copilot     | `scaffold-copilot-extensions`          |
-
-If an adapter is missing for a selected target, warn the user:
+For each selected target, confirm its adapter skill exists in the
+deftly plugin (target→adapter mapping appears in Step 2.5). If an
+adapter is missing, warn:
 
 > "Adapter `<name>` not found. Core scaffold will write `AGENTS.md` and
 > `.agents/skills/` only — you'll need to add agent-specific permissions
 > manually. Proceed anyway? (y/n)"
 
-If the user declines, drop that target from the set and continue. If
-all targets are dropped, abort with a message pointing the user to the
-spec.
+If the user declines, drop that target. If all targets are dropped,
+abort and point the user to the spec.
 
 ## Phase 1: DISCOVER
 
