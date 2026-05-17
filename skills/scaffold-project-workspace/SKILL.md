@@ -62,6 +62,10 @@ front — each phase calls out the exact moment to load each one:
 
 ## Phase 0: SIBLING SHORTCUT (optional)
 
+> Before walking discovery, ask: is there a sibling workspace whose
+> structure already answers most of these questions? Inheriting from a
+> sibling is cheap; rediscovering from scratch is expensive.
+
 If the user references an existing workspace as a template ("same as
 ~/path/to/sibling", "rollout phase of project X", "fork of Y") OR the
 new workspace name resembles an existing sibling (e.g. `fooRollout`
@@ -105,6 +109,10 @@ If using sibling shortcut, jump to Phase 2.1 after this step. Phase 1
 becomes "fetch new project's Linear data + Notion docs only".
 
 ## Phase 1: DISCOVER
+
+> Before scaffolding, ask: what repos, interfaces, and docs am I
+> missing? Cheap to ask the user now; expensive to backfill once
+> templates are written.
 
 ### Step 1.1: Accept Linear Project URL
 
@@ -172,6 +180,9 @@ describe the interfaces, extract them from the fetched docs instead
 of asking for each pair manually.
 
 ## Phase 2: SCAFFOLD
+
+> Before writing, ask: what already exists in `{workspace}` that I
+> might clobber? List, then merge — never blind-write.
 
 ### Step 2.1: Create Directory Structure
 
@@ -321,6 +332,10 @@ git commit -m "init project workspace with skills and permissions"
 ```
 
 ## Phase 3: DOCUMENT
+
+> Before documenting, ask: which fetched content captures *decisions*
+> (keep verbatim under `architecture/`) vs. *status* (link to source,
+> don't duplicate — it will drift)?
 
 ### Step 3.1: Write Fetched Docs to Architecture
 
