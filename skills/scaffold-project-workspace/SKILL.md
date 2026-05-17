@@ -90,6 +90,11 @@ to paste fetched doc content or skip Phase 3.1.
 - **NEVER batch unrelated improvements in Phase 4** — fix one specific
   gap per edit; present multiple findings as a list for single approval,
   but don't bundle them into one rewrite.
+- **NEVER edit the installed-plugin copy of this skill in Phase 4** —
+  changes must land in the source repo, not in any agent's plugin
+  cache (`~/.claude/plugins/`, `~/.codex/plugins/`, etc.). The cache
+  is overwritten on plugin update and edits are silently lost. See
+  `references/reflect.md` for the source-path resolution snippet.
 
 Adapter-specific NEVER lists (e.g. "never blind-write
 `.claude/settings.local.json`") live in each adapter skill, not here.
