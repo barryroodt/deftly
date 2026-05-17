@@ -302,16 +302,10 @@ org-portable.
 
 ### Step 1.6: Discover Cross-Repo Interfaces
 
-For each pair of repos, ask:
-> "How does {repo-A} connect to {repo-B}? (API calls, shared types,
-> binary dependencies, env vars, SQL, RPC — or 'no direct connection')"
-
-Skip pairs where the user says no connection. Record all interfaces
-for use in the architect skill and ARCHITECTURE.md.
-
-If the user says "check the docs" or the fetched documents already
-describe the interfaces, extract them from the fetched docs instead
-of asking for each pair manually.
+**MANDATORY — load `references/interface-discovery.md`** for the
+per-pair prompt template and the fetched-doc shortcut. Record
+discovered interfaces for use in Step 2.7 (architect skill) and Step
+3.2 (ARCHITECTURE.md).
 
 ## Phase 2: SCAFFOLD
 
