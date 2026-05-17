@@ -1,6 +1,6 @@
 ---
 name: weekly-review
-description: Use when the user wants a summary of what they did this week, a weekly recap, standup notes, or a status update
+description: Generates a weekly recap markdown report from Linear (tickets), GitHub (PRs and reviews), and Notion (docs). Use when the user wants a weekly summary, weekly recap, standup notes, status update, or weekly review.
 ---
 
 # Weekly Recap
