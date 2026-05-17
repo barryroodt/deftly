@@ -7,6 +7,10 @@ description: Generates a weekly recap markdown report from Linear (tickets), Git
 
 Generates a summary of the week's work by pulling from Linear, Notion, and Github.
 
+## Mindset
+
+Before pulling data, hold the goal: a reader skimming this report should learn **what shipped, what's still moving, and what's blocked** — in that order, as substance not inventory. Optimize every section for the "so what," not the activity count. Group by initiative or theme, not by ticket type or date. When in doubt about a ticket's meaning, read the resolution, not the title.
+
 ## Never
 
 - **Never use `mergedAt` in `gh search prs --json`** — not a valid field; the call fails silently. Use `state == "merged"` instead.
