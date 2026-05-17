@@ -430,18 +430,23 @@ by default settings) before retrying.
 ### Step 3.5: Final Verification
 
 1. List the full workspace structure (2-3 levels deep)
-2. Confirm all expected files exist:
+2. Confirm fixed files exist:
    - `.claude/CLAUDE.md`
    - `.claude/settings.json`
    - `.claude/settings.local.json`
    - `.claude/skills/architect/SKILL.md`
    - `.claude/skills/team/SKILL.md`
-   - `.claude/skills/{short-name}/SKILL.md` for each repo
    - `architecture/ARCHITECTURE.md`
    - `architecture/LINEAR-PROJECT.md`
    - `.gitignore`
-3. Confirm all repos cloned successfully
-4. Present summary to user
+3. Confirm per-repo skills: list `.claude/skills/` and verify a
+   `{short-name}/SKILL.md` exists for every entry in the cloned-repo
+   list from Step 2.2. Any mismatch (extra skill dir without a repo,
+   or repo without a skill dir) is a bug — flag to the user before
+   continuing.
+4. Confirm all repos cloned successfully (one `git -C <repo> rev-parse HEAD`
+   per repo; non-zero exit = clone failed).
+5. Present summary to user.
 
 ## Phase 4: REFLECT
 
