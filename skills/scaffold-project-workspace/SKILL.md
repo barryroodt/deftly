@@ -16,24 +16,16 @@ description: Scaffold and bootstrap a multi-repo project workspace from a
 
 ## What this produces
 
-A `{workspace}/` containing:
-- `AGENTS.md` (canonical cross-agent workspace doc — Codex, Copilot,
-  Gemini read this natively; Claude Code reads via a `CLAUDE.md` bridge
-  written by the CC adapter)
-- `.agents/skills/{architect,team,<repo>...}/SKILL.md` (de-facto
-  cross-agent skills directory — auto-discovered by Codex and Gemini;
-  bridged into `.claude/skills/` by the CC adapter)
-- Per-target adapter outputs (see Phase 0.5):
-  - Claude Code: `.claude/settings.json`, `.claude/settings.local.json`,
-    `.claude/CLAUDE.md` bridge, Agent Teams flag, `/team` + `/architect`
-    slash skills
-  - Codex: `.codex/config.toml` permissions
-  - Gemini: `.gemini/settings.json` trust + tool gates
-  - Copilot: (no workspace state needed beyond `AGENTS.md`)
-- `architecture/{ARCHITECTURE,LINEAR-PROJECT}.md` (own git repo)
-- One cloned repo dir per repo discovered from the Linear project
-- `.gitignore` excluding the cloned repos and per-adapter personal
-  settings (each adapter contributes its own gitignore entries)
+Core artifacts (always written):
+- `AGENTS.md` — canonical cross-agent workspace doc
+- `.agents/skills/{architect,team,<repo>...}/SKILL.md` — cross-agent
+  skills (`team/` only when `claude-code` ∈ targets)
+- `architecture/{ARCHITECTURE,LINEAR-PROJECT}.md` — own git repo
+- One cloned dir per repo discovered from Linear
+- `.gitignore` baseline (adapters append per-target entries)
+
+Per-target adapter outputs vary with Phase 0.5 selection; canonical
+ownership table in `references/multi-target.md`.
 
 **Not for:** Single-repo projects, projects without a Linear project,
 runtime orchestration (use the generated `/architect` or `/team` skills
