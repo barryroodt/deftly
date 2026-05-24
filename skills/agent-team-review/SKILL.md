@@ -73,6 +73,7 @@ Before listing reviewers, identify the failure modes this diff plausibly hits, t
 | Schema mismatch, cross-service contract drift | **contracts** | Changes to shared types, shared schema, API signatures |
 | Missing or incomplete spec coverage | **spec-compliance** | New features not in plan docs; behavior not in AGENTS.md |
 | Unmaintainable structures, redundant branching, unclear intent | **structural-simplification** | Large diffs, growing files, new branching into shared flows, refactors |
+| Tests provide false confidence (tautological / RGR-only) | **test-reviewer** | Diff touches `*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/` |
 | Language/framework-specific patterns (Rust idioms, Go concurrency, etc.) | **specialist** (discovered skill) | Language-specific flags (`.rs`, `.go`, etc.) + skill mentions domain knowledge |
 
 **Decision rules:**
