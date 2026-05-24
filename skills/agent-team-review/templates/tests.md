@@ -77,6 +77,7 @@ Required for `READY`:
 - **NEVER flag a test as tautological without naming the specific plausible bug it fails to catch.** Vague verdicts ("feels tautological", "looks weak") are forbidden and erode trust in the verdict.
 - **NEVER report findings outside this lane** — missing tests, style, naming, file size, flakiness, performance. Route to the relevant reviewer via `SendMessage`.
 - **NEVER recommend a remedy that produces another tautological test.** Rewriting a `mirror-the-impl` test as a different `mirror-the-impl` is not progress — prefer delete when no behavioral invariant is recoverable.
+- **NEVER downgrade a finding to `WITH_FIXES` because a test "looks weak"** without naming the specific plausible bug that would slip through. If you cannot name the bug, the finding is either `NOT_READY` per the catalog or has no basis.
 
 ## Output Format
 
