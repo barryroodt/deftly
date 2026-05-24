@@ -43,7 +43,7 @@ Reviewer findings must cite the pattern by name.
 
 ## How to Review
 
-1. Read the full diff. Identify every test added or modified.
+1. **Build the test inventory.** List every added or modified test by `file:line` and the subject function/module each one targets. Tests with no clear subject are presumptive `over-mocked / no subject`.
 2. For each test, attempt to name a specific plausible bug it catches.
 3. If you cannot name one, match the test against the pattern catalog and cite the pattern.
 4. Record the bug-it-fails-to-catch and the preferred remedy.
