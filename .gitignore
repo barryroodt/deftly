@@ -15,3 +15,6 @@ node_modules/
 
 # Claude Code local workspace state
 .claude/
+
+# refine-skill telemetry (per-run log dump)
+.refine/

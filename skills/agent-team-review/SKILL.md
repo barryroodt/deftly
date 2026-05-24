@@ -64,13 +64,23 @@ Present discovered specialists to the user:
 
 ### 4. Decide Team Composition
 
-Before listing reviewers, ask:
+Before listing reviewers, identify the failure modes this diff plausibly hits, then map each to the reviewer who catches it:
 
-- **Which failure modes does this diff most plausibly hit?** Logic bugs? Convention drift? Schema mismatch across services? Missing spec coverage? Structural / maintainability regressions?
-- **Which reviewer catches each failure mode?** Pick the minimum set — extra reviewers dilute findings and inflate the refinement round.
-- **Where is judgment required vs. mechanical checking?** Mechanical checks (CI, type-check) belong to one reviewer; judgment calls (architecture, naming) belong to the reviewer with the matching template.
-- **Is `structural-simplification` warranted?** Add it for non-trivial refactors, diffs that grow large files, diffs that add branching into shared flows, or whenever the user explicitly asks for a strict / thermo-nuclear / maintainability-focused review. Skip for tiny localized bugfixes where there is no structural surface to evaluate.
-- **Is a specialist warranted?** Only if a discovered skill genuinely encodes domain knowledge the generic templates miss.
+| Failure Mode | Reviewer | Signs in Diff |
+|--------------|----------|---------------|
+| Logic bugs, null checks, race conditions | **correctness** | New branching, async/await, null-coalesce patterns |
+| Convention/style violations, lint/format, CI failures | **conventions** (language-specific) | Changed files in language zone; inconsistent casing/indentation |
+| Schema mismatch, cross-service contract drift | **contracts** | Changes to shared types, shared schema, API signatures |
+| Missing or incomplete spec coverage | **spec-compliance** | New features not in plan docs; behavior not in AGENTS.md |
+| Unmaintainable structures, redundant branching, unclear intent | **structural-simplification** | Large diffs, growing files, new branching into shared flows, refactors |
+| Language/framework-specific patterns (Rust idioms, Go concurrency, etc.) | **specialist** (discovered skill) | Language-specific flags (`.rs`, `.go`, etc.) + skill mentions domain knowledge |
+
+**Decision rules:**
+
+- **Pick the minimum set.** Extra reviewers dilute findings and inflate the refinement round (Step 8).
+- **Add `structural-simplification`** if the diff is a non-trivial refactor, grows any file significantly, adds branching into shared flows, or the user explicitly requests a strict/maintainability-focused review. Skip for tiny localized bugfixes.
+- **Add a specialist** only if a discovered skill genuinely encodes domain knowledge the generic templates miss (e.g., async Rust patterns when `rust-pro` skill exists and `.rs` files changed).
+- **Always include `spec-compliance`** for features — even "small" changes to shared contracts must be checked against the plan.
 
 ### 5. Present Review Plan
 
@@ -89,6 +99,12 @@ Show the user the planned team composition before spawning:
 > | rust-specialist | rust-pro skill | packages/core/ (if Rust) |
 >
 > Proceed? [Yes / Adjust]
+
+**Handling requests for >5 reviewers:** If the user asks to add more reviewers and the team would exceed 5, explain the O(n²) refinement cost:
+
+> The refinement round (Step 8) broadcasts findings to all reviewers and collects amendments — with 6+ reviewers, this scales quadratically and refinement findings get dropped. I recommend:
+> 1. Proceed with the top 5 (based on likely failure modes), or
+> 2. Phase into two sequential reviews: first a core review (correctness + spec-compliance + contracts), then a follow-up on maintainability + language-specific patterns.
 
 Wait for user approval before spawning.
 
@@ -161,7 +177,13 @@ Shut down all reviewer teammates via `SendMessage` with `type: "shutdown_request
 
 ## Output Format (Per Reviewer)
 
-Each reviewer's output format is defined in its template under `templates/<role>.md`. All templates share the same structure: verdict enum, issues by severity, strengths, and cross-reviewer notes. See any of `correctness.md`, `conventions.md`, `contracts.md`, `spec-compliance.md`, or `structural-simplification.md` for the canonical shape.
+Each reviewer's output format is defined in its template under `templates/<role>.md`. Templates are loaded by each teammate via the MANDATORY instruction embedded in their prompt during Step 6:
+
+```
+MANDATORY — Read templates/<role>.md and follow its Output Format exactly.
+```
+
+All templates share the same structure: verdict enum, issues by severity, strengths, and cross-reviewer notes. See any of `correctness.md`, `conventions.md`, `contracts.md`, `spec-compliance.md`, or `structural-simplification.md` in `skills/agent-team-review/templates/` for the canonical shape.
 
 ## Worked Example
 

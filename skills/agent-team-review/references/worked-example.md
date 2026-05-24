@@ -2,6 +2,8 @@
 
 A complete agent-team-review run on a hypothetical branch. Shows the shape of every step; use as a reference for first-time invocation.
 
+**Do NOT Load:** Subsequent runs of agent-team-review should skip this file unless the user explicitly requests a detailed walkthrough to prevent unnecessary context bloat.
+
 ## Setup
 
 - Branch: `feat/email-notifications`
