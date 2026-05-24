@@ -1,6 +1,6 @@
 ---
 name: refine-skill
-description: Iteratively refine a SKILL.md via the sandboxed `@jumptag/refine-skill` Docker CLI — runs the skill-forge judge → hitl loop inside a container so the host filesystem stays untouched apart from the skill being refined. Use when the user wants to polish, audit, grade, or iterate on an existing SKILL.md and prefers a hands-off batch run over an interactive in-Claude loop. Triggers on "/refine-skill", "refine this skill with the CLI", "run refine-skill on …", "dogfood refine-skill", "sandboxed skill refine". Requires Docker daemon running and a provider API key (Anthropic by default).
+description: Refine an existing SKILL.md iteratively using sandboxed batch processing. Use when you want automated skill auditing without real-time interaction. Triggers on /refine-skill, dogfood, batch skill polish, CLI refine, sandboxed audit. Requires Docker daemon and provider API key.
 ---
 
 # refine-skill (dogfood the CLI)
@@ -15,6 +15,8 @@ Dogfoods `@jumptag/refine-skill` — a Docker-sandboxed wrapper around the skill
 - Batch-refining multiple skills without manually driving each item through HITL
 - Running the refine loop in a sandbox so the host filesystem stays untouched beyond the target skill directory
 
+**Decision framework**: Choose this CLI-based skill when the refine loop is batch/unattended (high priority), cost control is tight (prefers Haiku), or you want persistent telemetry in `.refine/log.json` for later analysis. Choose the in-Claude `refine-skill` skill when the user wants real-time judgment on each improvement, Docker is unavailable, or the skill being refined is the current working context.
+
 ## When NOT to Use
 
 - Creating a brand-new skill from scratch — use the in-Claude-Code `skill-forge-create` / `superpowers:writing-skills` flow instead
@@ -23,11 +25,7 @@ Dogfoods `@jumptag/refine-skill` — a Docker-sandboxed wrapper around the skill
 
 ## Prerequisites
 
-1. **Docker daemon** running (Engine 20.10+). Verify with `docker info >/dev/null 2>&1`.
-2. **Node 20+** on PATH (for `npx`). Verify with `node --version`.
-3. **Provider API key** matching the chosen `--model`. Default model is `claude-sonnet-4-5`; the loader expects `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN`. Other supported providers and their env vars are listed in [MODELS.md](https://github.com/barryroodt/refine-skill/blob/main/MODELS.md).
-
-If any prerequisite is missing, surface the exact gap and stop — do **not** fall back to running judge/hitl manually in-session (defeats the purpose of the dogfood).
+Requires Docker daemon (Engine 20.10+), Node 20+ on PATH, and a provider API key matching the chosen model (default `claude-sonnet-4-5` expects `ANTHROPIC_API_KEY` or `ANTHROPIC_OAUTH_TOKEN`; see [MODELS.md](https://github.com/barryroodt/refine-skill/blob/main/MODELS.md) for other providers). If any is missing, surface the exact gap and stop — do **not** fall back to in-session judge/hitl (defeats the sandbox purpose).
 
 ## Invocation
 
@@ -56,15 +54,34 @@ Run the three checks above in parallel. On any failure, report the specific gap 
 Before launching, surface:
 
 - Target path
-- Model + estimated cost band (Haiku ≈ $0.01–0.05/run, Sonnet ≈ $0.03–0.15/run, Opus ≈ $0.30–1+/run on a typical small skill)
+- Model + estimated cost band (Haiku typically costs $0.02–0.03 per small skill ≤500 lines / $0.04–0.08 per medium skill 500–1000 lines; Sonnet ≈ $0.03–0.15/run; Opus ≈ $0.30–1+/run)
 - Iteration cap
 - That telemetry will be written to `<path>/.refine/log.json` unless `--no-log` was passed
+
+**Cost estimation walkthrough**: To calculate the expected cost for a specific skill:
+
+1. **Count the lines** in the target `SKILL.md` (e.g., 300 lines)
+2. **Estimate input tokens**: ~4 tokens per line for typical Markdown prose: 300 lines × 4 tokens/line = 1,200 tokens/pass
+3. **Divide by convergence rate**: Typical refine loops run 2–4 passes before converging (delta drops below improvement threshold). Assume 3 passes: 1,200 tokens × 3 passes = 3,600 input tokens total
+4. **Look up model pricing**: Claude Haiku (default) input: $0.80/M tokens; output ~500 tokens/pass (improvements): $4.00/M tokens
+   - Input cost: 3,600 ÷ 1,000,000 × $0.80 = $0.0029
+   - Output cost: (500 tokens × 3 passes) ÷ 1,000,000 × $4.00 = $0.0060
+   - **Total: ~$0.01** (plus minor overhead for docker init, typically ≤$0.005)
+5. **For larger skills** (800 lines), expect 2–3× the cost due to longer context; for Sonnet (4× input cost), expect 4× the Haiku cost.
+
+**Example**: A 300-line skill refined with Haiku over 3 passes ≈ $0.01–0.02 total. A 500-line skill with Sonnet ≈ $0.04–0.06.
 
 Wait for user approval before invoking the CLI.
 
 ### 4. Run
 
-Invoke via `npx` so the user's pinned version (or the latest published) is used:
+Before burning API calls, always pass `--dry-run` first to verify Docker mount and image resolution:
+
+```bash
+npx @jumptag/refine-skill@latest <abs-path> --model <model> --iterations <n> --dry-run
+```
+
+Once confirmed, invoke without `--dry-run`:
 
 ```bash
 npx @jumptag/refine-skill@latest <abs-path> --model <model> --iterations <n>
@@ -83,6 +100,47 @@ After the CLI exits, read `<path>/.refine/log.json` (unless `--no-log`) and summ
 - Exit code interpretation (see table below)
 
 Then run `git -C <path> log --oneline -<passes>` so the user sees the actual diff trail.
+
+**Sample log.json structure** (for confident parsing on first run):
+
+```json
+{
+  "skill_path": "/var/skills/my-skill",
+  "model": "claude-haiku-4-5",
+  "start_timestamp": "2026-05-24T09:01:20Z",
+  "passes": [
+    {
+      "pass": 1,
+      "score": 78,
+      "items_applied": 5,
+      "items_skipped": 0,
+      "improvements": [
+        "Fix incomplete agent rules example",
+        "Add flow diagram",
+        "Clarify precedence of When NOT to Use"
+      ]
+    },
+    {
+      "pass": 2,
+      "score": 84,
+      "items_applied": 3,
+      "items_skipped": 1,
+      "improvements": [
+        "Expand Prerequisites section",
+        "Add Exit Code table"
+      ]
+    }
+  ],
+  "final_score": 84,
+  "stop_reason": "delta_below_threshold",
+  "total_items_applied": 8,
+  "total_runtime_sec": 42
+}
+```
+
+Parse this on every run to confidently extract pass count, score trajectory, and stop reason. If the file is missing or malformed, the run crashed before telemetry was written.
+
+**If log.json is missing or malformed**: Check the stderr output from the Docker invocation for error messages. If the exit code is 12 (partial apply), the skill directory may be in mid-edit state; inspect uncommitted changes with `git -C <path> diff` and reset with `git checkout .` if needed before re-running.
 
 ## Exit Code Map
 
@@ -114,24 +172,36 @@ Then run `git -C <path> log --oneline -<passes>` so the user sees the actual dif
 
 ## Distinguishing from the in-Claude `refine-skill` skill
 
-The user's environment also exposes an interactive `refine-skill` skill that runs the judge → hitl loop directly inside the current Claude Code session (no Docker). Pick this CLI-based skill when:
+The user's environment also exposes an interactive `refine-skill` skill that runs the judge → hitl loop directly inside the current Claude Code session (no Docker). Use the following decision matrix to pick the right tool:
 
+| Criterion | CLI-based (Docker) | In-Claude (interactive) |
+|-----------|-------------------|-------------------------|
+| **Real-time interactivity** | ❌ Hands-off batch | ✅ Review each finding |
+| **Docker available** | ✅ Required | ❌ Not needed |
+| **Persistent telemetry** | ✅ `.refine/log.json` | ❌ Session-only output |
+| **Cost predictability** | ✅ Tight control, Haiku default | ❌ Uses session model |
+| **Skill context needed** | ❌ Sandbox isolates | ✅ Full session context |
+| **Commit-per-item history** | ✅ Clear git trail | ⚠️ Manual or scripted |
+| **Setup friction** | ⚠️ Requires Docker daemon | ✅ None |
+
+**Pick the CLI version when:**
 - The user explicitly says "dogfood", "CLI", "sandboxed", or "Docker"
 - They want telemetry written to disk for later analysis
 - They want a hands-off batch run while doing other work
 - They want commit-per-item history in the target repo
 
-Pick the in-Claude version when:
-
+**Pick the in-Claude version when:**
 - The user wants to review each judge finding interactively
 - Docker is not available
 - The skill being refined is the *current* working skill and they want context-aware judgments
 
 If unclear, ask which they want — do not silently pick the wrong loop.
 
-## Upstream references
+---
 
-- CLI source / issues: https://github.com/barryroodt/refine-skill
-- npm: https://www.npmjs.com/package/@jumptag/refine-skill
-- Supported models + env vars: https://github.com/barryroodt/refine-skill/blob/main/MODELS.md
-- Spec: `specs/2026-05-20-deftly-refine-cli-design.md` in the upstream repo
+### Further Reading
+
+- **CLI source / issues** (load if troubleshooting or contributing): https://github.com/barryroodt/refine-skill
+- **npm package** (reference only; do NOT load unless checking versions): https://www.npmjs.com/package/@jumptag/refine-skill
+- **Supported models + env vars** (load only if switching away from default claude-haiku-4-5): https://github.com/barryroodt/refine-skill/blob/main/MODELS.md
+- **Full CLI design spec** (reference only; do NOT load unless designing new refine features): `specs/2026-05-20-deftly-refine-cli-design.md` in the upstream repo
