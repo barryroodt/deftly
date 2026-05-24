@@ -217,3 +217,4 @@ See [references/worked-example.md](references/worked-example.md) for a complete 
 - **NEVER omit `file:line` from a finding.** Vague feedback ("the error handling is wrong") is unactionable and wastes the review.
 - **NEVER review outside your lane.** Flag cross-cutting concerns to the relevant reviewer via `SendMessage` instead of reporting them yourself — out-of-lane findings duplicate work and bloat the verdict. Examples: correctness reviewer finds a convention violation → message conventions; conventions reviewer spots a contract mismatch → message contracts.
 - **NEVER scan the diff before reading `AGENTS.md`** (conventions reviewers). The conventions live there, not in the code — reviewing the diff first anchors you on the wrong patterns.
+- **NEVER flag a test as tautological without naming the plausible bug it fails to catch** (test-reviewer). Vague verdicts ("feels tautological", "looks weak") are unactionable and erode trust in the verdict.
