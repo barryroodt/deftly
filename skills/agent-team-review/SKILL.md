@@ -82,6 +82,7 @@ Before listing reviewers, identify the failure modes this diff plausibly hits, t
 - **Add `structural-simplification`** if the diff is a non-trivial refactor, grows any file significantly, adds branching into shared flows, or the user explicitly requests a strict/maintainability-focused review. Skip for tiny localized bugfixes.
 - **Add a specialist** only if a discovered skill genuinely encodes domain knowledge the generic templates miss (e.g., async Rust patterns when `rust-pro` skill exists and `.rs` files changed).
 - **Always include `spec-compliance`** for features — even "small" changes to shared contracts must be checked against the plan.
+- **Add `test-reviewer`** if the diff touches test paths (`*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/`). The reviewer evaluates existing tests for tautology; it does not flag missing tests (that is correctness / spec-compliance).
 
 ### 5. Present Review Plan
 
