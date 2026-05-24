@@ -46,8 +46,8 @@ Reviewer findings must cite the pattern by name.
 1. **Build the test inventory.** List every added or modified test by `file:line` and the subject function/module each one targets. Tests with no clear subject are presumptive `over-mocked / no subject`.
 2. For each test, attempt to name a specific plausible bug it catches.
 3. If you cannot name one, match the test against the pattern catalog and cite the pattern.
-4. When choosing between delete and rewrite, prefer the option that simplifies the suite — fewer tests carrying clearer invariants beats more tests with diluted ones.
-5. Check whether a real behavioral invariant is recoverable — if yes, prefer rewrite; if no, prefer delete.
+4. Check whether a real behavioral invariant is recoverable — if yes, prefer rewrite; if no, prefer delete.
+5. When choosing between delete and rewrite, prefer the option that simplifies the suite — fewer tests carrying clearer invariants beats more tests with diluted ones.
 
 ## Edge Cases
 
