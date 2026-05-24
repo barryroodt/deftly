@@ -31,6 +31,7 @@ No project skills match. User skills: `rust-pro` (irrelevant — no Rust). No sp
 
 - Failure modes: API logic, async queue handling, cross-package schema drift, missing spec coverage.
 - Reviewers chosen: correctness, spec-compliance, api-conventions, web-conventions, contracts. (5 — at the cap.)
+- Note: `test-reviewer` would also spawn if the diff included test files (`*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/`); this example's diff has no test paths, so it is skipped.
 
 ## Step 5: Present Plan (user approves)
 

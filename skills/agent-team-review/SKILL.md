@@ -73,6 +73,7 @@ Before listing reviewers, identify the failure modes this diff plausibly hits, t
 | Schema mismatch, cross-service contract drift | **contracts** | Changes to shared types, shared schema, API signatures |
 | Missing or incomplete spec coverage | **spec-compliance** | New features not in plan docs; behavior not in AGENTS.md |
 | Unmaintainable structures, redundant branching, unclear intent | **structural-simplification** | Large diffs, growing files, new branching into shared flows, refactors |
+| Tests provide false confidence (tautological / RGR-only) | **test-reviewer** | Diff touches `*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/` |
 | Language/framework-specific patterns (Rust idioms, Go concurrency, etc.) | **specialist** (discovered skill) | Language-specific flags (`.rs`, `.go`, etc.) + skill mentions domain knowledge |
 
 **Decision rules:**
@@ -81,6 +82,7 @@ Before listing reviewers, identify the failure modes this diff plausibly hits, t
 - **Add `structural-simplification`** if the diff is a non-trivial refactor, grows any file significantly, adds branching into shared flows, or the user explicitly requests a strict/maintainability-focused review. Skip for tiny localized bugfixes.
 - **Add a specialist** only if a discovered skill genuinely encodes domain knowledge the generic templates miss (e.g., async Rust patterns when `rust-pro` skill exists and `.rs` files changed).
 - **Always include `spec-compliance`** for features — even "small" changes to shared contracts must be checked against the plan.
+- **Add `test-reviewer`** if the diff touches test paths (`*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/`). The reviewer evaluates existing tests for tautology; it does not flag missing tests (that is correctness / spec-compliance).
 
 ### 5. Present Review Plan
 
@@ -96,6 +98,7 @@ Show the user the planned team composition before spawning:
 > | web-conventions | conventions.md | packages/web/ |
 > | contracts | contracts.md | Cross-package boundaries |
 > | structural-simplification | structural-simplification.md | All changed files (if non-trivial refactor) |
+> | test-reviewer | tests.md | All test files in diff (`*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/`) |
 > | rust-specialist | rust-pro skill | packages/core/ (if Rust) |
 >
 > Proceed? [Yes / Adjust]
@@ -214,3 +217,4 @@ See [references/worked-example.md](references/worked-example.md) for a complete 
 - **NEVER omit `file:line` from a finding.** Vague feedback ("the error handling is wrong") is unactionable and wastes the review.
 - **NEVER review outside your lane.** Flag cross-cutting concerns to the relevant reviewer via `SendMessage` instead of reporting them yourself — out-of-lane findings duplicate work and bloat the verdict. Examples: correctness reviewer finds a convention violation → message conventions; conventions reviewer spots a contract mismatch → message contracts.
 - **NEVER scan the diff before reading `AGENTS.md`** (conventions reviewers). The conventions live there, not in the code — reviewing the diff first anchors you on the wrong patterns.
+- **NEVER flag a test as tautological without naming the plausible bug it fails to catch** (test-reviewer). Vague verdicts ("feels tautological", "looks weak") are unactionable and erode trust in the verdict.
