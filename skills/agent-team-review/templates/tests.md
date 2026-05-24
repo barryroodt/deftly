@@ -53,6 +53,7 @@ Reviewer findings must cite the pattern by name.
 
 - **Greenfield code without a co-located behavioral spec.** If the diff introduces a new module and its tests in one go, downgrade catalog matches from `NOT_READY` to `WITH_FIXES` *only when* the test exercises the new code's observable input/output contract (no private internals, no exact-call-order). If the test still touches private internals or asserts on call order, keep the strict bar.
 - **Cross-suite integration coverage.** Before flagging an over-mocked unit test, scan the diff (and adjacent test files) for an integration test exercising the same behavior. If one exists, downgrade the finding to **Minor** or withdraw it. Note the cross-reference in the finding (`see <other-test>:<line>`).
+- **Pattern match with real bug-catch.** If a test matches a catalog pattern (e.g. `mirror-the-impl`) *and* you can name a specific plausible bug it actually catches, cite the pattern but downgrade the finding to **Important** or **Minor**. The test is not strictly tautological — flag the structural risk (next impl change forces a lockstep test change) without blocking the PR.
 
 ## Preferred Remedies
 
