@@ -98,6 +98,7 @@ Show the user the planned team composition before spawning:
 > | web-conventions | conventions.md | packages/web/ |
 > | contracts | contracts.md | Cross-package boundaries |
 > | structural-simplification | structural-simplification.md | All changed files (if non-trivial refactor) |
+> | test-reviewer | tests.md | All test files in diff (`*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/`) |
 > | rust-specialist | rust-pro skill | packages/core/ (if Rust) |
 >
 > Proceed? [Yes / Adjust]
