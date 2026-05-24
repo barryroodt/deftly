@@ -1,6 +1,6 @@
 ---
 name: agent-team-review
-description: Parallel multi-agent code review using Claude Code Agent Teams. Use when the user wants a thorough multi-perspective review of a branch or PR before merge — spawns focused reviewer teammates (correctness, conventions, spec-compliance, contracts, and language specialists) that collaborate via messages and produce a unified verdict. Triggers on "/agent-team-review", "team review", "multi-agent review", "PR review", "branch review", "review before merge". Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var.
+description: Parallel multi-agent code review using Claude Code Agent Teams. Use when the user wants a thorough multi-perspective review of a branch or PR before merge — spawns focused reviewer teammates (correctness, conventions, spec-compliance, contracts, structural-simplification, and language specialists) that collaborate via messages and produce a unified verdict. Triggers on "/agent-team-review", "team review", "multi-agent review", "PR review", "branch review", "review before merge". Requires CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS env var.
 ---
 
 # Agent Team Code Review
@@ -66,9 +66,10 @@ Present discovered specialists to the user:
 
 Before listing reviewers, ask:
 
-- **Which failure modes does this diff most plausibly hit?** Logic bugs? Convention drift? Schema mismatch across services? Missing spec coverage?
+- **Which failure modes does this diff most plausibly hit?** Logic bugs? Convention drift? Schema mismatch across services? Missing spec coverage? Structural / maintainability regressions?
 - **Which reviewer catches each failure mode?** Pick the minimum set — extra reviewers dilute findings and inflate the refinement round.
 - **Where is judgment required vs. mechanical checking?** Mechanical checks (CI, type-check) belong to one reviewer; judgment calls (architecture, naming) belong to the reviewer with the matching template.
+- **Is `structural-simplification` warranted?** Add it for non-trivial refactors, diffs that grow large files, diffs that add branching into shared flows, or whenever the user explicitly asks for a strict / thermo-nuclear / maintainability-focused review. Skip for tiny localized bugfixes where there is no structural surface to evaluate.
 - **Is a specialist warranted?** Only if a discovered skill genuinely encodes domain knowledge the generic templates miss.
 
 ### 5. Present Review Plan
@@ -84,6 +85,7 @@ Show the user the planned team composition before spawning:
 > | api-conventions | conventions.md | packages/api/ |
 > | web-conventions | conventions.md | packages/web/ |
 > | contracts | contracts.md | Cross-package boundaries |
+> | structural-simplification | structural-simplification.md | All changed files (if non-trivial refactor) |
 > | rust-specialist | rust-pro skill | packages/core/ (if Rust) |
 >
 > Proceed? [Yes / Adjust]
@@ -159,7 +161,7 @@ Shut down all reviewer teammates via `SendMessage` with `type: "shutdown_request
 
 ## Output Format (Per Reviewer)
 
-Each reviewer's output format is defined in its template under `templates/<role>.md`. All templates share the same structure: verdict enum, issues by severity, strengths, and cross-reviewer notes. See any of `correctness.md`, `conventions.md`, `contracts.md`, or `spec-compliance.md` for the canonical shape.
+Each reviewer's output format is defined in its template under `templates/<role>.md`. All templates share the same structure: verdict enum, issues by severity, strengths, and cross-reviewer notes. See any of `correctness.md`, `conventions.md`, `contracts.md`, `spec-compliance.md`, or `structural-simplification.md` for the canonical shape.
 
 ## Worked Example
 
