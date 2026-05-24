@@ -65,15 +65,7 @@ Reviewer findings must cite the pattern by name.
 Required for `READY`:
 
 - Every new or modified test has a nameable plausible bug it would catch.
-- No test matches a pattern in the catalog.
-
-Treat as presumptive blockers:
-
-- a test whose sole assertion is a snapshot
-- a test that verifies its own mock
-- a test whose structure mirrors the subject's branching
-- a test that exercises no real subject (everything mocked)
-- a test that asserts on private internals or exact call order of trivial steps
+- No test matches a pattern in the catalog (see catalog above — any match → `NOT_READY` per Standard #2).
 
 ## Never
 
