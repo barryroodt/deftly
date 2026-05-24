@@ -49,6 +49,11 @@ Reviewer findings must cite the pattern by name.
 4. Record the bug-it-fails-to-catch and the preferred remedy.
 5. Check whether a real behavioral invariant is recoverable — if yes, prefer rewrite; if no, prefer delete.
 
+## Edge Cases
+
+- **Greenfield code without a co-located behavioral spec.** If the diff introduces a new module and its tests in one go, downgrade catalog matches from `NOT_READY` to `WITH_FIXES` *only when* the test exercises the new code's observable input/output contract (no private internals, no exact-call-order). If the test still touches private internals or asserts on call order, keep the strict bar.
+- **Cross-suite integration coverage.** Before flagging an over-mocked unit test, scan the diff (and adjacent test files) for an integration test exercising the same behavior. If one exists, downgrade the finding to **Minor** or withdraw it. Note the cross-reference in the finding (`see <other-test>:<line>`).
+
 ## Preferred Remedies
 
 | Pattern | Remedy |
