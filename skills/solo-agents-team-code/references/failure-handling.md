@@ -1,0 +1,9 @@
+# Failure & Timeout Handling
+
+Load this when done-criteria fail, a worker never goes idle, or a worker crashes — i.e. on any non-clean idle wake or spawn failure.
+
+1. **Timer fires, done-criteria fail:** retry up to 2× — each retry `send_input`s the worker the specific failing criteria (expected vs observed) *before* re-arming, since re-arming alone gives the idle worker nothing to act on. On the 2nd failure, escalate — **the mechanism depends on the selected harness**: a harness whose model you can select → `close_process` the worker, then `spawn_agent(...)` with the next-stronger model in *that harness's* form (resend `agent_instructions` + task, smoke-test, re-arm); a fixed-default harness → respawning it unchanged is not an escalation, so `close_process` and `spawn_agent` on another available harness from `list_agent_tools`. (`restart_process` cannot change the spec.) If no stronger model and no alternate harness is available, abort, `close_process`, mark the todo failed, and log the reason to a scratchpad.
+2. **Timer expires, worker never went idle:** distinguish stuck (no output progress) from slow (still producing). Stuck → `restart_process`, then resend the saved task/context and smoke-test before re-arming (restart restores only the launch spec, not the work request). Slow → extend `max_wait_ms` once (up to ~2×) and re-arm. Still nothing → abort and log.
+3. **Worker crashes:** re-`spawn_agent` once on the same harness/model; if it fails again, escalate per §1 (a stronger model if the harness supports selecting one, else another available harness), resending context each time. If both fail, mark the todo blocked, raise an alert scratchpad, and stop dispatching new tasks until a human reviews.
+
+Add exponential backoff when re-arming (double `max_wait_ms` each time, cap ~10 min) so slow-but-progressing workers don't trigger wake storms.
