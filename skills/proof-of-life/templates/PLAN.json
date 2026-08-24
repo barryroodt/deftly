@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "name": "<task>",
+  "root": "root-integration",
+  "maxWorkers": 2,
+  "nodes": [
+    {
+      "id": "contract",
+      "kind": "leaf",
+      "needs": [],
+      "owns": [
+        "file:src/contract.ts"
+      ],
+      "tier": "strong",
+      "gates": "gates/contract.md"
+    },
+    {
+      "id": "implementation",
+      "kind": "leaf",
+      "needs": [
+        "contract"
+      ],
+      "owns": [
+        "file:src/implementation.ts"
+      ],
+      "tier": "standard",
+      "gates": "gates/implementation.md"
+    },
+    {
+      "id": "root-integration",
+      "kind": "integration",
+      "needs": [
+        "implementation"
+      ],
+      "owns": [],
+      "tier": "strong",
+      "gates": "gates/root-integration.md"
+    }
+  ]
+}
