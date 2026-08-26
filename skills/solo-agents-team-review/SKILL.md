@@ -59,6 +59,7 @@ The orchestrator loads the mapped template file and **embeds its full content** 
   - **Content fetch:** reviewers read file contents via `git show "$pinned_sha":<path>` (or an isolated worktree at the pinned SHA: `git worktree add <dir> "$pinned_sha"`), never the checked-out tree. This is the sanctioned alternative to `gh pr diff` when no remote PR exists, and it satisfies "NEVER trust the local working tree": the working tree is untrusted, the pinned commit object is not.
   - **Changed files:** `git diff "$merge_base"..."$pinned_sha" --stat`.
 - Build **one canonical immutable diff** from the pinned base and head SHAs. Derive each lane's smallest safe slice from that exact diff before startup, preserving complete hunks and enough context to evaluate the change. Cross-cutting lanes may receive the full canonical diff when slicing would hide interactions. Record each slice with its lane and both SHAs. Reviewers may read file contents at `pinned_sha`, but they never generate, refresh, or re-derive a diff. No changes → stop.
+- Materialize the pinned base and head objects once when possible. When available, workers use `git show <pinned_sha>:<path>` for supporting content. Use `gh api repos/<owner>/<repo>/contents/<path>?ref=<pinned_sha>` only when pinned local content is unavailable. Both paths read the captured SHA; neither permits a moving ref or the local working tree.
 
 ### 2. Decide Team Composition
 
@@ -73,6 +74,8 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 | Language/framework idioms | `specialist` | `.rs`/`.go` etc. + a matching domain skill |
 
 Rules: pick the **minimum set**; **cap at 5 spawned workers** — the cap counts workers, not lanes: each per-zone `conventions:<zone>` instance counts individually, because the refinement round is O(n²) in workers. If language zones push the count past 5, merge the least-changed zones into a single `conventions` worker, then drop optional lanes (`structural-simplification` first, then `specialist`); skip `structural-simplification` for tiny localized diffs; always include `spec-compliance` for features; add `test-reviewer` when test paths change; add a `specialist` only when a domain skill encodes knowledge the templates miss.
+- Create one run-scoped, orchestrator-owned context packet at `review-<run>-context` after selecting the lanes. Write it once before worker spawn and keep it read-only. Include the pinned base/head SHAs, captured PR title/body/spec links, changed-file manifest, applicable repository instructions from pinned files, every lane's scope and slice identifier, the validation ownership map, and whether both pinned Git objects are available locally.
+- Assign every validation command to exactly one selected lane before writing the packet. Put the command-to-owner map in the packet and each lane prompt. Other lanes perform static assessment and never duplicate an owned command.
 
 ### 3. Resolve Runtime, Present the Plan, and Confirm the Action Mode
 
@@ -82,16 +85,16 @@ Resolve runtime capabilities once before showing the plan:
 CACHE_KEY = "solo-agents-team-review/runtime-capabilities/v1"
 CACHE_TTL_SECONDS = 604800
 
-cached = None if refresh_runtime_cache else kv_get(CACHE_KEY)
+cached = None if refresh_runtime_cache or caller_harness or caller_model else kv_get(CACHE_KEY)
 capabilities = cached if valid_runtime_cache(cached) else discover_runtime_capabilities()
 selection = select_runtime(capabilities, caller_harness, caller_model)
 ```
 
-A cache miss, read error, malformed value, forbidden field, or cached set that cannot honor a caller choice causes one fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
+A caller-specified harness or model bypasses the default cache and uses fresh discovery so exact caller constraints cannot inherit a cached selection. A cache miss, read error, malformed value, or forbidden field also causes one fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
 
 Present one required confirmation form containing both fields:
 
-1. **Plan decision:** `approve`, or a concrete revision to the shown composition (lane → template → pinned lane slice), selected harness/model, and pinned head SHA.
+1. **Plan decision:** `approve`, or a concrete revision to the shown composition (lane → template → pinned lane slice), validation ownership map, selected harness/model, and pinned head SHA.
 2. **Action mode:** exactly one of:
    1. **Summary only (`summary`):** Return the unified verdict. Do not draft or post comments. Do not modify code.
    2. **Draft review comments for approval (`draft-comments`):** Return the unified verdict and exact proposed comments. Wait for explicit approval before posting them. Do not modify code.
@@ -146,15 +149,18 @@ Treat a worker that is running or producing useful review output as ready. An ex
 
 If a cached selection causes an explicit runtime-capability failure, close the affected workers and refresh discovery once. Reapply caller choices. If fresh discovery preserves the harness/model shown in the approved plan, retry only the affected lanes with their identical real prompts and pinned slices. If it changes that selection, close all workers and return to Step 3 so the updated plan and mode receive one new combined confirmation. Never silently change an approved runtime.
 
-After the real prompt verifies the selection, write the fresh capability set and last-known-good selection with `kv_set(CACHE_KEY, value, ttl_seconds=CACHE_TTL_SECONDS)`. A cache write failure is non-fatal: continue with the verified workers, report it once, and do not repeat discovery only to populate the cache.
+After the real prompt verifies an unconstrained selection, write the fresh capability set and last-known-good selection with `kv_set(CACHE_KEY, value, ttl_seconds=CACHE_TTL_SECONDS)`. Caller-constrained runs neither read nor overwrite the default cache. A cache write failure is non-fatal: continue with the verified workers, report it once, and do not repeat discovery only to populate the cache.
 
 Each `reviewer_prompt(lane)` MUST:
 - **Embed the mapped template's full content** (per the lane→template map) and instruct the worker to follow its Output Format exactly.
-- **Carry the pinned base SHA, pinned head SHA, and assigned immutable lane slice.** State that the slice came from the orchestrator's one canonical diff. The worker may read file contents only at `pinned_sha` (`gh api repos/<owner>/<repo>/contents/<path>?ref=<head-sha>` or `git show <head-sha>:<path>`). It must never use the local working tree, run `gh pr diff` or `git diff`, query a moving PR head, refresh the slice, or derive another diff.
-- **Scope the lane to its assigned slice and contract.** Cross-cutting lanes may receive the full canonical diff. `AGENTS.md` and pinned file contents may supply conventions and context, but do not authorize expanding or reconstructing the diff. Run applicable CI commands only against an isolated checkout at `pinned_sha`; never claim PASS for a check that did not run against that pinned code.
+- **Carry the shared context packet and assigned immutable lane slice.** Include `review-<run>-context`, both pinned SHAs, and the lane's slice identifier. The packet is orchestrator-owned and read-only. State that the slice came from the one canonical diff.
+- **Read supporting content from the pinned head only.** Prefer `git show <pinned_sha>:<path>` when the packet records local objects as available. Use the pinned GitHub content API only as fallback. Never use the local working tree, run `gh pr diff` or `git diff`, query a moving head, refresh the slice, or derive another diff.
+- **Scope the lane to its assigned slice and contract.** Cross-cutting lanes may receive the full canonical diff. Pinned repository instructions and file contents may supply context but do not authorize expanding or reconstructing the diff.
+- **Enforce single-owner validation.** Include the complete ownership map and identify this lane's commands. The owner runs each command once against an isolated checkout at `pinned_sha` and records the result. Non-owners perform static assessment only. Never claim PASS for a command that its owner did not run against pinned code.
+- **Require a valid Finding Index.** Include one row for every Critical, Important, or Minor issue. Normalize fingerprint as `<file>:<symbol-or-region>:<failure-mode>`: exact diff path, exact source identifier or `<file-scope>`, and a concise lower-kebab-case failure mode. Set `Cross-lane` to `none` unless another lane must supply evidence or adjudication.
 - **Deliver via one scratchpad:** write the complete review (all sections, including **Notes for Other Reviewers**) to `review-<run>-<lane>`. That scratchpad is the delivery channel and the cross-lane channel; the worker writes only its own. Do not report other lanes' issues as your own findings.
 - **Treat any "facts" the orchestrator supplies as provisional** and verify them against the PR head; correct the orchestrator if wrong.
-- For a `specialist`, instruct the worker to load its domain skill (`skill://<name>`) so it reviews with context. Its output contract is **the Output Format section of `templates/correctness.md`** (Verdict → Issues Critical/Important/Minor → Strengths → Notes for Other Reviewers), with the heading `## <Domain> Specialist Review`; embed that section in the prompt exactly as for template-backed lanes, and use the same scratchpad delivery.
+- For a `specialist`, instruct the worker to load its domain skill (`skill://<name>`) and use the Output Format from `templates/correctness.md`, including the Finding Index, issues, strengths, and notes. Change the heading to `## <Domain> Specialist Review` and the finding ID prefix to its specialist lane ID; embed the full contract and use the same scratchpad delivery.
 
 ### 5. Idle-Fire Dispatch Loop
 
@@ -171,17 +177,42 @@ timer_fire_when_idle_all(
 On wake, for each worker: call `get_process_status` (corroborate with `get_process_output`) and branch:
 - **`running` / producing** → timeout handling (§2 below). Do NOT verify.
 - **`exited` / error** → crash recovery (§3). Do NOT `send_input` or re-arm a dead process.
-- **`idle`** → **idle != done**: read `review-<run>-<lane>`. If it holds a valid, template-formatted review, `todo_complete`. If empty/malformed, `send_input` the specific missing section (re-arming without corrective input is a no-op) and re-arm.
+- **`idle`** → **idle != done**: read `review-<run>-<lane>`. Complete its todo only when it contains a valid template-formatted review, Finding Index, and Notes section. If any part is empty or malformed, `send_input` the specific gap before re-arming.
 
 Use `timer_fire_when_idle_all` for the review barrier (all lanes must finish before refinement); `timer_fire_when_idle_any` when chasing a single laggard; `timer_set` for a plain delay.
 
 ### 6. Refinement Round
 
-Once every lane's scratchpad is populated, the orchestrator reads all `review-<run>-<lane>` scratchpads (including each one's **Notes for Other Reviewers**), then dispatches amendment prompts to affected workers via `send_input` ("Given <other lane's finding>, amend / withdraw / escalate your finding X and update `review-<run>-<lane>`"). Re-arm `timer_fire_when_idle_any` for the amending workers and collect the updates. Dedupe issues raised by two lanes; drop findings another lane disproves. This catches duplicates, invalid findings, and issues that get more severe combined.
+Once every planned lane has a valid scratchpad, issue the `scratchpad_read` calls for all `review-<run>-<lane>` records as one parallel tool-call batch. Read each **Finding Index**, full findings, and **Notes for Other Reviewers**.
 
-**Notes targeting a lane that was not spawned:** do NOT spawn that lane late. Record the note directly in the unified verdict under that lane's category (Critical/Important/Minor per the raising reviewer's severity), tagged as raised cross-lane and not reviewed by a dedicated lane.
+Skip amendment workers only when every condition is true:
 
-**Hard cap: one amendment cycle per lane.** Each lane receives at most one amendment prompt; its updated scratchpad is final. If two lanes still disagree after that cycle (a finding–counterfinding pair), do NOT dispatch another round — the orchestrator adjudicates: keep both positions, mark the finding **Disputed** in the verdict with a one-line note per side, and let the human decide. This prevents amendment ping-pong between lanes.
+1. every planned lane completed with a valid Finding Index;
+2. no index contains a Critical finding;
+3. every `Cross-lane` value is `none`;
+4. every Notes section is exactly `- none`;
+5. every Critical, Important, or Minor issue has exactly one matching index row; and
+6. no fingerprint repeats within one lane or occurs in multiple lanes, and no two lanes report the same `<file>:<symbol-or-region>` pair.
+
+An index is valid only when it has the template's five columns, uses the allowed severities, supplies a pinned `file:line`, normalizes the fingerprint path, region, and lower-kebab-case failure mode, and has no missing or orphan rows. A missing lane or malformed index disables the fast path.
+
+When refinement is required, group all relevant evidence for each affected lane into one amendment prompt. Include matching fingerprints, complete involved findings, routed notes, and counterevidence. A Critical finding returns to its originating lane and one appropriate spawned peer when available. Each affected lane receives at most one prompt.
+
+Issue the real `send_input(..., wait_ms=250)` calls for all affected lanes as one parallel tool-call batch. Then arm one barrier for the complete affected set:
+
+```
+timer_fire_when_idle_all(
+    processes=[<all affected lane process ids>],
+    max_wait_ms=<one bounded amendment wait>,
+    body="amendment wake: inspect every affected worker, then read and validate each updated review-<run>-<lane> scratchpad",
+)
+```
+
+On wake, inspect all affected workers and collect their updated scratchpads. Dedupe matching fingerprints, withdraw disproved findings, and escalate severity when combined evidence requires it. Do not add a serial prompt, per-lane timer, or second barrier.
+
+**Notes targeting a lane that was not spawned:** do not spawn that lane late. Record the note in the unified verdict at the raising reviewer's severity, tagged as cross-lane and not reviewed by a dedicated lane.
+
+**Hard cap: one amendment cycle per lane.** If lanes still disagree after that cycle, keep both positions, mark the finding **Disputed**, add one line per side, and leave the decision to the human.
 
 ### 7. Unified Verdict
 
@@ -215,6 +246,7 @@ Minor findings remain in the verdict and are never fixed automatically. The sele
 - **Runtime capability or cache failure:** Treat an expired, malformed, unreadable, or rejected cache entry as unavailable. Refresh discovery once, reapply caller choices, and retry affected workers with the identical real first prompts and pinned slices only when the approved harness/model remains unchanged. If discovery changes the selection, return to the combined confirmation. Never fall back to the rejected cache. Cache write failure is non-fatal after successful smoke testing.
 - **Ambiguous slow boot:** The concurrent `wait_ms=250` sends are intentionally short. After one parallel status/output inspection, arm one delayed wake for only the ambiguous workers. Explicit runtime errors fail immediately. Do not add per-worker serial waits.
 - **§1 Scratchpad invalid / done-criteria fail:** `send_input` the specific gap and re-arm, up to a small retry cap (~2). On the cap, close the worker. Any escalation to a stronger model or alternate harness follows the runtime-selection rules: reuse the identical pinned SHAs, lane slice, template, and prompt; if the harness/model differs from the approved plan, return to Step 3 before respawning. If no approved selection can recover the lane, mark its todo failed, record the reason in a scratchpad, and present that lane as MISSING.
+- **Validation owner failure:** Reassign a command once only when evidence proves its original owner did not start it. Record the override in orchestrator-owned `review-<run>-validation`, then send one corrective prompt to one surviving lane. If execution status is unknown, the command ran and failed, or the new owner cannot run it, report `MISSING` or the observed failure; never duplicate it or attempt a second reassignment.
 - **§2 Worker never goes idle (timeout wake, `running`):** distinguish stuck (no new output) from slow (still producing). Stuck → escalate per §1. Slow → extend `max_wait_ms` once (~2×) and re-arm.
 - **§3 Worker crashes (`exited`/error):** Re-spawn once with the same approved harness/model and identical prompt. A later escalation follows §1 and requires a new combined confirmation if the runtime changes. If recovery fails, mark the todo blocked, raise an alert scratchpad, and stop dispatching that lane.
 - **§4 `gh` failures (auth expired, rate limit, no permissions on a fork):** don't abort — fall back to plain git, but reconstruct **both** pinned SHAs (Scope requires base *and* head). (1) **Base remote:** `origin` is often the contributor's fork while `refs/pull/<n>/head` lives on the *base* repo — match `git remote -v` URLs to the base repo (or the conventional `upstream`) and verify with `git ls-remote --exit-code <base-remote> refs/pull/<n>/head`; if no remote exposes it, halt and ask the user to add the base repo as a remote. (2) **Head:** `git fetch <base-remote> refs/pull/<n>/head`, then capture `head_sha=$(git rev-parse FETCH_HEAD)` immediately (a later fetch overwrites `FETCH_HEAD`). (3) **Target base branch:** `refs/pull/<n>/head` does NOT reveal it and `gh` is down, so require `--base <ref>` (or another authoritative source for the PR's base) — **do not assume the default branch**, a non-default-base PR would be reviewed against the wrong base; if the base cannot be determined, halt and ask, do not proceed. (4) **Base SHA:** `git fetch <base-remote> <base-branch>`, then `base_sha=$(git rev-parse FETCH_HEAD)`. (5) Diff `git diff "$(git merge-base "$base_sha" "$head_sha")...$head_sha"` and read contents via `git show <sha>:<path>`. In the verdict, note that PR metadata (title, description, comments) is unavailable — and, if the base had to be supplied manually, note that too. Auth errors → tell the user to run `gh auth login`; rate limits → back off, don't retry in a loop.
@@ -222,7 +254,7 @@ Minor findings remain in the verdict and are never fixed automatically. The sele
 
 ### 10. Cleanup
 
-`close_process` every reviewer worker. Leave the run-scoped `review-<run>-<lane>` scratchpads as the record — the `<run>` namespace (PR/branch + pinned short SHA, plus a timestamp/session id for identical-head reruns) keeps them from colliding with reviews of other PRs/branches, other heads, or earlier runs of the same head.
+`close_process` every reviewer worker. Leave `review-<run>-context`, any `review-<run>-validation` override record, and the run-scoped lane scratchpads as the review record. Never reuse them for another run, including a rerun at the same head SHA.
 
 ## Lock Ordering
 
@@ -235,7 +267,7 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER present lead assumptions as established facts**, especially anything derived from a possibly-stale local tree. Label them provisional for reviewers to verify against the head.
 - **NEVER exceed 5 spawned workers** (counted per worker, including each per-zone `conventions` instance). The refinement round scales O(n²).
 - **NEVER assume idle means done.** Inspect `get_process_status` first, then verify the lane's scratchpad is populated per its template before completing.
-- **NEVER hardcode or silently substitute a harness or model.** Apply caller choices before cached values. Use only a valid project-scoped runtime-capability cache entry, and refresh discovery once when that entry fails. If the selected runtime changes, return to confirmation before spawning again.
+- **NEVER hardcode or silently substitute a harness or model.** Bypass the default cache whenever the caller names either value. Use cached last-known-good selection only for unconstrained runs, and refresh discovery once when it fails. If the selected runtime changes after approval, return to confirmation before spawning again.
 - **NEVER escalate a stuck/failed worker with `restart_process`** (it cannot change the spec). Close and respawn it under Failure & Timeout Handling, always with the original pinned SHAs and lane slice.
 - **NEVER spawn reviewers until one response explicitly approves the current plan and confirms exactly one action mode.** Any plan revision invalidates the mode and requires the complete combined form again.
 - **NEVER infer, default, or change either confirmation value.** The approved plan and confirmed mode remain separate explicit fields in the same interaction.
@@ -243,6 +275,12 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER resolve push remotes or inspect worktrees for mutation safety before `auto-fix` is confirmed.** Complete that preflight before reviewer spawn when `auto-fix` is selected.
 - **NEVER spawn or smoke-test reviewers serially.** Create todos, spawn workers, send real first prompts with `wait_ms=250`, and inspect status/output as parallel batches. Use one delayed wake only for ambiguous slow boots.
 - **NEVER derive more than one canonical diff or let a lane reconstruct one.** Every lane slice comes from the pinned canonical diff; use the full canonical diff when a cross-cutting slice would hide interactions.
+- **NEVER let a worker create, modify, or replace `review-<run>-context` or `review-<run>-validation`.**
+- **NEVER prefer a network read when the required pinned Git object is available locally.**
+- **NEVER assign one validation command to multiple lanes or let an unassigned lane run it.** Reassign once only when the original command provably did not start; otherwise report the known result or `MISSING`.
+- **NEVER take the refinement fast path with a missing lane or Critical, malformed, duplicate, cross-lane, or noted finding.**
+- **NEVER dispatch amendment prompts serially or run more than one amendment cycle per lane.** Send one complete prompt per affected lane as a parallel batch, then use one `timer_fire_when_idle_all` barrier.
+- **NEVER reuse an earlier run's result solely because its head SHA matches.**
 - **NEVER post review feedback in `summary` or `auto-fix`, and NEVER post `draft-comments` without separate explicit approval.**
 - **NEVER modify code in `summary`, `draft-comments`, or `auto-post`.** In `auto-fix`, reviewer workers remain read-only and the orchestrator alone owns the isolated fix worktree, implementation, validation, commit, and integration.
 - **NEVER expand `auto-fix` into a change that needs design, planning, or a scope decision.** Keep it as a proposal.
@@ -260,6 +298,9 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER omit `file:line` from a finding.**
 - **NEVER review outside your lane.** Put cross-lane concerns in the **Notes for Other Reviewers** section of your own `review-<run>-<lane>` scratchpad; the orchestrator routes them.
 - **NEVER generate, refresh, or re-derive a diff.** Review only the assigned immutable lane slice, or the full canonical diff when supplied, and read supporting file contents only at `pinned_sha`.
+- **NEVER modify the shared context or validation-override record, or substitute moving PR metadata for pinned values.**
+- **NEVER run a validation command assigned to another lane.**
+- **NEVER omit or malform the Finding Index.** Give every Critical, Important, or Minor issue one row and normalize its fingerprint.
 - **NEVER flag a test as tautological without naming the plausible bug it fails to catch** (test-reviewer).
 
 ### Worker mechanics

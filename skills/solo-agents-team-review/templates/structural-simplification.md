@@ -124,6 +124,8 @@ Prefer a smaller number of high-conviction comments over a long list of cosmetic
 
 ## Output Format
 
+The Finding Index is mandatory. Give every Critical, Important, or Minor issue one row; remove the example row when there are no issues. Fingerprint uses the exact diff path, exact source identifier or `<file-scope>`, and a concise lower-kebab-case failure mode. Under Notes, write exactly `- none` when no cross-lane review is needed; otherwise replace it with targeted lane bullets.
+
 ```markdown
 ## Structural Simplification Review
 
@@ -137,6 +139,12 @@ Prefer a smaller number of high-conviction comments over a long list of cosmetic
 
 ### Code-Judo Opportunities
 - `file:line` — Current shape: [brief]. Proposed reframing: [brief]. **Why it matters:** [what complexity disappears].
+
+### Finding Index
+
+| ID | Severity | Location | Fingerprint | Cross-lane |
+|---|---|---|---|---|
+| `STRUCT-F1` | Critical \| Important \| Minor | `file:line` | `<file>:<symbol-or-region>:<failure-mode>` | `none` \| `<lane-id>[, <lane-id>…]` |
 
 ### Issues
 
@@ -153,5 +161,5 @@ Prefer a smaller number of high-conviction comments over a long list of cosmetic
 - Specific structural wins with file references — extractions, simplifications, deletions, sharpened boundaries.
 
 ### Notes for Other Reviewers
-- [Any cross-cutting concerns, each naming the target lane]
+- none
 ```

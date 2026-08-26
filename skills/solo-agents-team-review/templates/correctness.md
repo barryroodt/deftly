@@ -31,10 +31,18 @@ If you find issues in those areas, record them under **Notes for Other Reviewers
 
 ## Output Format
 
+The Finding Index is mandatory. Give every Critical, Important, or Minor issue one row; remove the example row when there are no issues. Fingerprint uses the exact diff path, exact source identifier or `<file-scope>`, and a concise lower-kebab-case failure mode. Under Notes, write exactly `- none` when no cross-lane review is needed; otherwise replace it with targeted lane bullets.
+
 ```markdown
 ## Correctness Review
 
 ### Verdict: READY | WITH_FIXES | NOT_READY
+
+### Finding Index
+
+| ID | Severity | Location | Fingerprint | Cross-lane |
+|---|---|---|---|---|
+| `COR-F1` | Critical \| Important \| Minor | `file:line` | `<file>:<symbol-or-region>:<failure-mode>` | `none` \| `<lane-id>[, <lane-id>…]` |
 
 ### Issues
 
@@ -51,5 +59,5 @@ If you find issues in those areas, record them under **Notes for Other Reviewers
 - Specific positive observations with file references.
 
 ### Notes for Other Reviewers
-- [Any cross-cutting concerns, each naming the target lane]
+- none
 ```
