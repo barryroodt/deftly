@@ -13,9 +13,10 @@ Parallel, multi-perspective code review where each reviewer is a **Solo MCP work
 
 ## Prerequisites
 
-- **Solo MCP available**, with a project selected. Run `whoami` first in a fresh session; `select_project` if scope is unset.
-- **An agent harness Solo can spawn.** Resolve it at spawn time via `list_agent_tools` (see Step 4): the **caller-specified** harness if one was given (match by `name` or `id`), otherwise any harness `list_agent_tools` returns — every returned entry is a spawnable agent runtime, so do not filter by name or `tool_type`; if several are returned and the caller named none, pick one and note which (or ask). If a caller named a harness that is not in the list, **halt and report the available names** rather than substituting a different one. Halt too if `list_agent_tools` returns nothing. (The **hard dependency is Solo MCP itself**, not any particular harness.)
-- **A worker model — follows the selected harness's contract.** Pass the model in the chosen harness's own form: the `Omp` harness takes a per-launch, provider-qualified `--model <provider>/<model>` (slugs from `omp models`); another harness uses its own documented model flag. A caller-supplied model wins and is tried first — but a harness can only honor it if it has a documented model mechanism. If a model is explicitly requested and the selected harness has no known way to pass it, **halt and report (or pick a harness that supports it)** rather than silently running an unrelated default. Only when no model is requested may a harness run its saved default. Slugs drift and a listed model can still be unauthenticated or rejected at runtime, so always smoke-test whatever ends up selected.
+- **Solo MCP available**, with a project selected. Run `whoami` only in a fresh session; `select_project` only if scope is unset.
+- **An agent harness Solo can spawn.** Resolve it through the project-scoped runtime-capability cache in Step 3. A caller-specified harness always wins and must match a usable `name` or `id`; never silently substitute another harness. Without a caller choice, prefer the cached last-known-good harness, then fresh discovery. Halt only when fresh `list_agent_tools` discovery finds no spawnable harness.
+- **A worker model that follows the selected harness's contract.** A caller-specified model always wins and uses that harness's documented mechanism. `Omp` accepts `--model <provider>/<model>`; other harnesses use their documented flags. A saved harness default is allowed only when the caller did not request a model. Every selected harness/model pair still receives a real-first-prompt smoke test.
+- **Project-scoped runtime-capability cache.** Use Solo KV key `solo-agents-team-review/runtime-capabilities/v1` with a seven-day TTL (`604800` seconds). It may contain harness IDs, documented model mechanisms, discovered provider-qualified models, and the last-known-good selection. Never cache authentication, permissions, action modes, repository state, diffs, SHAs, prompts, or worker context. Caller choices override cached values.
 - **`gh`** for PR metadata and diffs.
 
 Stop only if Solo MCP (or a selected project scope) is genuinely unavailable, or Solo can spawn no agent harness at all.
@@ -23,10 +24,13 @@ Stop only if Solo MCP (or a selected project scope) is genuinely unavailable, or
 ## Invocation
 
 ```
-/solo-agents-team-review                 # auto-detect scope from git
-/solo-agents-team-review <pr-number>     # review a specific PR
-/solo-agents-team-review --base develop  # diff against a different base
+/solo-agents-team-review                          # auto-detect scope from git
+/solo-agents-team-review <pr-number>              # review a specific PR
+/solo-agents-team-review --base develop           # diff against a different base
+/solo-agents-team-review --refresh-runtime-cache  # bypass cached runtime capabilities
 ```
+
+`--refresh-runtime-cache` forces one fresh capability discovery and replaces the cache only after a real first prompt verifies the selected runtime.
 
 ## Reviewer Lanes → Templates (explicit map)
 
@@ -47,14 +51,14 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 ### 1. Scope
 
 - **Pin the PR head AND base, review only from those SHAs, never the local working tree.** For a remote PR: `gh pr view <n> --json headRefOid,baseRefOid` captures both SHAs at scope time. A local checkout may be on a stale branch, and the PR's current head can move after you pin it (a re-push mid-review), so anything but the captured SHAs silently reviews the wrong code (a common source of phantom findings, e.g. a "divergence" that does not exist at the pinned head). Build **one immutable diff** from the pinned SHAs — `gh api repos/<owner>/<repo>/compare/<base-sha>...<head-sha>` or `git diff <base-sha>...<head-sha>` — and hand THAT to reviewers. Use `gh pr diff <n>` only before pinning, or as a convenience after verifying the current head still equals your pinned SHA.
-- **Capture the update target during scope.** Record `pinned_sha`, the reviewed branch, and its exact destination. For a PR, also capture `headRefName`, `headRepository`, `headRepositoryOwner`, and `isCrossRepository`, then resolve the push remote for that head repository. For a local-only review, record the full local ref `refs/heads/<branch>` and its current object ID. Treat `pinned_sha` as the expected old value for every later branch update.
+- **Capture only review identity during scope.** Record `pinned_sha`, the reviewed branch or PR, and the immutable base/head pair. Do not resolve a push remote, inspect worktree ownership for mutation safety, or perform another update preflight yet. Those checks are unnecessary for read-only modes and run only after the user confirms `auto-fix`, before any reviewer starts.
 - **No PR number (local-branch auto-detect):** the same pinning discipline applies — pin a SHA and review only from it.
   - **Pin first:** `pinned_sha=$(git rev-parse HEAD)` at scope time. That SHA — not "the current branch" — is the review head; if the user keeps committing, the review still covers `pinned_sha`. Everything below uses this variable, never a fresh `HEAD`.
   - **Base:** use `--base <ref>` if given. Otherwise discover the default branch and resolve it to a ref that **actually exists** (a local branch of that name may not exist, so prefer the remote-tracking form). The two discovery commands return **different shapes** — handle each: `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` returns a **bare** name (`main`) → prefix it (`origin/main`); `git symbolic-ref --short refs/remotes/origin/HEAD` returns an **already-prefixed** ref (`origin/main`) → use as-is (do not prefix again). Verify with `git rev-parse --verify --quiet <ref>`; if it does not resolve, fall back to a local `<default>` only if it exists, else halt and ask for `--base`. Then `merge_base=$(git merge-base <resolved-base> "$pinned_sha")` — against the pinned SHA, never a live `HEAD`.
   - **Dirty tree:** uncommitted changes are excluded by design — `pinned_sha` covers committed state only. If `git status --porcelain` is non-empty, tell the user their uncommitted changes are not part of the review (commit them and re-run to include them).
   - **Content fetch:** reviewers read file contents via `git show "$pinned_sha":<path>` (or an isolated worktree at the pinned SHA: `git worktree add <dir> "$pinned_sha"`), never the checked-out tree. This is the sanctioned alternative to `gh pr diff` when no remote PR exists, and it satisfies "NEVER trust the local working tree": the working tree is untrusted, the pinned commit object is not.
   - **Changed files:** `git diff "$merge_base"..."$pinned_sha" --stat`.
-- Group the immutable diff by top-level service/dir (for a PR, the pinned-SHA compare above; for a local branch, `git diff <merge-base>...<pinned-sha> --stat`). No changes → stop.
+- Build **one canonical immutable diff** from the pinned base and head SHAs. Derive each lane's smallest safe slice from that exact diff before startup, preserving complete hunks and enough context to evaluate the change. Cross-cutting lanes may receive the full canonical diff when slicing would hide interactions. Record each slice with its lane and both SHAs. Reviewers may read file contents at `pinned_sha`, but they never generate, refresh, or re-derive a diff. No changes → stop.
 
 ### 2. Decide Team Composition
 
@@ -70,61 +74,84 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 
 Rules: pick the **minimum set**; **cap at 5 spawned workers** — the cap counts workers, not lanes: each per-zone `conventions:<zone>` instance counts individually, because the refinement round is O(n²) in workers. If language zones push the count past 5, merge the least-changed zones into a single `conventions` worker, then drop optional lanes (`structural-simplification` first, then `specialist`); skip `structural-simplification` for tiny localized diffs; always include `spec-compliance` for features; add `test-reviewer` when test paths change; add a `specialist` only when a domain skill encodes knowledge the templates miss.
 
-### 3. Present the Plan and Confirm the Action Mode
+### 3. Resolve Runtime, Present the Plan, and Confirm the Action Mode
 
-Before spawning any reviewer, complete two separate confirmation gates in order:
+Resolve runtime capabilities once before showing the plan:
 
-1. **Review plan:** Show the composition (lane → template → scope), worker harness and model, and pinned head SHA. Wait for the user to approve or revise the plan.
-2. **Action mode:** After plan approval, ask the user to select exactly one mode:
+```
+CACHE_KEY = "solo-agents-team-review/runtime-capabilities/v1"
+CACHE_TTL_SECONDS = 604800
+
+cached = None if refresh_runtime_cache else kv_get(CACHE_KEY)
+capabilities = cached if valid_runtime_cache(cached) else discover_runtime_capabilities()
+selection = select_runtime(capabilities, caller_harness, caller_model)
+```
+
+A cache miss, read error, malformed value, forbidden field, or cached set that cannot honor a caller choice causes one fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
+
+Present one required confirmation form containing both fields:
+
+1. **Plan decision:** `approve`, or a concrete revision to the shown composition (lane → template → pinned lane slice), selected harness/model, and pinned head SHA.
+2. **Action mode:** exactly one of:
    1. **Summary only (`summary`):** Return the unified verdict. Do not draft or post comments. Do not modify code.
    2. **Draft review comments for approval (`draft-comments`):** Return the unified verdict and exact proposed comments. Wait for explicit approval before posting them. Do not modify code.
    3. **Automatically post review feedback (`auto-post`):** Return the unified verdict and post the final review feedback without another approval. Do not modify code.
-   4. **Automatically fix Critical/Important issues (`auto-fix`):** Have the orchestrator fix and verify eligible Critical and Important findings, then update the reviewed branch without another approval. Before spawning reviewers, require an unambiguous update target captured during scope. A local-only target must not be checked out in another worktree because updating its ref behind that worktree is unsafe. If these conditions are not met, report that `auto-fix` is unavailable and ask for another mode. Review workers remain read-only. Do not post review feedback. Keep changes that need design, planning, or a scope decision as proposals.
+   4. **Automatically fix Critical/Important issues (`auto-fix`):** Have the orchestrator fix and verify eligible Critical and Important findings, then update the reviewed branch without another approval. Review workers remain read-only. Do not post review feedback. Keep changes that need design, planning, or a scope decision as proposals.
 
-The modes are mutually exclusive. A mode named in the initial request may be shown as the proposed selection, but the user must confirm it after approving the plan. Never infer a mode from the request, plan approval, prior context, repository ownership, or available permissions. Never select a default. Spawn reviewers only after both gates are complete. If either answer is missing or ambiguous, stop and ask for it.
+Both answers are mandatory. A value from the initial request may be preselected, but the user must confirm it in this form. Never infer or default either answer. A plan revision invalidates every mode selection, including one submitted with that revision: apply the revision and present both fields again. Spawn reviewers only when one response approves the current plan and confirms exactly one mode.
+
+Only after `auto-fix` is confirmed, complete update preflight before spawning reviewers: capture the PR head repository and branch or the full local branch ref; resolve the exact update destination; require its object ID to equal `pinned_sha`; and reject a local target that `git worktree list --porcelain` shows as checked out elsewhere. If the target is ambiguous or unsafe, report that `auto-fix` is unavailable and present the combined form again for a new explicit mode.
 
 ### 4. Spawn Reviewers as Solo Workers
 
-Create **one todo per lane before spawning any worker** (so each worker's done-criteria map to a specific todo). Then spawn one worker per lane and smoke-test it before trusting it.
+Create one todo per lane before spawning any worker. Then start every lane concurrently. The real first review prompt is the smoke test; never add a synthetic probe or a serial per-worker wait.
 
 ```
-tools   = list_agent_tools()   # each entry exposes at least: id, name, tool_type
-if caller_harness:  # honor EXACTLY (contract: see Prerequisites)
-    harness = next((t for t in tools if t["name"] == caller_harness or t["id"] == caller_harness), None)
-    if harness is None:
-        halt_and_report(f"requested harness {caller_harness!r} not available; choices: {[t['name'] for t in tools]}")
-else:               # any returned harness; if several, pick one and note it (see Prerequisites)
-    harness = tools[0] if tools else None
-if harness is None:
-    halt_and_report("Solo has no agent harness registered")  # Solo MCP is the hard dep, not any particular harness
+# Derive lane_inputs locally from canonical_diff before any worker call.
 
-# Model passing: per-harness contract — Prerequisites is canonical.
-def launch_args(harness, model):
-    if model is None:
-        return []                       # no model requested -> harness runs its saved default
-    if harness["name"] == "Omp":
-        return ["--model", model]       # Omp's contract: --model "<provider>/<model>", slugs from `omp models`
-    # Unknown harness: DISCOVER its model flag before giving up — check the harness CLI's
-    # `--help` output and its docs for a documented model option; if one exists, use it here.
-    # Halt only when discovery finds no documented model mechanism.
-    halt_and_report(f"harness {harness['name']!r} has no known model-passing mechanism to honor "
-                    f"requested model {model!r} — pick a harness that supports it, or omit the model")
+# Parallel tool-call batch A: one real Solo call per lane.
+todo_create(<lane todo>) × lanes
 
-for lane in lanes:
-    w = spawn_agent(agent_tool_id=harness["id"], name=f"review-{run}-{lane}",  # run = <pr-or-branch>-<short-sha> (+ timestamp for same-head reruns)
-                    extra_args=launch_args(harness, requested_model))  # requested_model = caller's model, else None -> saved default
-    send_input(process_id=w["process_id"],
-               input=w["agent_instructions"] + "\n\n" + reviewer_prompt(lane), wait_ms=10000)
-    #   good -> boot banner + starts reviewing
-    #   bad  -> auth/model error banner ("No API key" / "not supported ...") -> close_process + next fallback
-    #   empty output + NO error banner != broken: slow boot -> extend wait and re-read before concluding
-    #   ALWAYS smoke-test: for a non-Omp harness this is how you confirm its default model actually runs
+# Parallel tool-call batch B: one real Solo call per lane.
+spawn_agent(
+    agent_tool_id=selection.harness_id,
+    extra_args=launch_args(selection),
+    name="review-<run>-<lane>",
+) × lanes
+
+# Parallel tool-call batch C: one real Solo call per spawned worker.
+send_input(
+    process_id=<lane process id>,
+    input=<agent_instructions> + "\n\n" + reviewer_prompt(
+        lane, pinned_base_sha, pinned_sha, lane_inputs[lane]
+    ),
+    wait_ms=250,
+) × lanes
+
+# Parallel tool-call batch D: both real inspection calls per worker.
+get_process_status(process_id=<lane process id>) × lanes
+get_process_output(process_id=<lane process id>) × lanes
+
+# Only when batch D leaves slow boots ambiguous:
+timer_fire_when_idle_any(
+    processes=<ambiguous process ids>,
+    max_wait_ms=<one bounded boot grace>,
+    body="Inspect each ambiguous worker once; classify useful work, explicit failure, or timeout.",
+)
 ```
+
+Each `× lanes` line means issue the existing per-lane Solo calls together as one parallel tool-call batch. It does not name or require a batch API.
+
+Treat a worker that is running or producing useful review output as ready. An explicit authentication, unsupported-model, missing-runtime, or launch-capability error fails immediately. Empty output without an error is an ambiguous slow boot: arm one delayed wake for only those workers, then inspect each once more. Never wait serially.
+
+If a cached selection causes an explicit runtime-capability failure, close the affected workers and refresh discovery once. Reapply caller choices. If fresh discovery preserves the harness/model shown in the approved plan, retry only the affected lanes with their identical real prompts and pinned slices. If it changes that selection, close all workers and return to Step 3 so the updated plan and mode receive one new combined confirmation. Never silently change an approved runtime.
+
+After the real prompt verifies the selection, write the fresh capability set and last-known-good selection with `kv_set(CACHE_KEY, value, ttl_seconds=CACHE_TTL_SECONDS)`. A cache write failure is non-fatal: continue with the verified workers, report it once, and do not repeat discovery only to populate the cache.
 
 Each `reviewer_prompt(lane)` MUST:
 - **Embed the mapped template's full content** (per the lane→template map) and instruct the worker to follow its Output Format exactly.
-- **Carry the pinned head SHA and the orchestrator's immutable diff.** Instruct the worker to read head-of-PR file contents **only at the pinned SHA** (`gh api repos/<owner>/<repo>/contents/<path>?ref=<head-sha>`, or `git show <head-sha>:<path>`) plus the handed-over pinned diff — NEVER the local working tree, and NEVER a fresh `gh pr diff` (it re-resolves the current head and can drift from the pinned SHA).
-- **Scope the lane:** the orchestrator's pinned diff for its area; `AGENTS.md` for conventions; CI commands to run **against the pinned head SHA** (conventions reviewers must run them and must NOT claim PASS for a check they did not run against the PR code; an isolated worktree at the pinned head SHA, building workspace deps first if needed, is the reliable way).
+- **Carry the pinned base SHA, pinned head SHA, and assigned immutable lane slice.** State that the slice came from the orchestrator's one canonical diff. The worker may read file contents only at `pinned_sha` (`gh api repos/<owner>/<repo>/contents/<path>?ref=<head-sha>` or `git show <head-sha>:<path>`). It must never use the local working tree, run `gh pr diff` or `git diff`, query a moving PR head, refresh the slice, or derive another diff.
+- **Scope the lane to its assigned slice and contract.** Cross-cutting lanes may receive the full canonical diff. `AGENTS.md` and pinned file contents may supply conventions and context, but do not authorize expanding or reconstructing the diff. Run applicable CI commands only against an isolated checkout at `pinned_sha`; never claim PASS for a check that did not run against that pinned code.
 - **Deliver via one scratchpad:** write the complete review (all sections, including **Notes for Other Reviewers**) to `review-<run>-<lane>`. That scratchpad is the delivery channel and the cross-lane channel; the worker writes only its own. Do not report other lanes' issues as your own findings.
 - **Treat any "facts" the orchestrator supplies as provisional** and verify them against the PR head; correct the orchestrator if wrong.
 - For a `specialist`, instruct the worker to load its domain skill (`skill://<name>`) so it reviews with context. Its output contract is **the Output Format section of `templates/correctness.md`** (Verdict → Issues Critical/Important/Minor → Strengths → Notes for Other Reviewers), with the heading `## <Domain> Specialist Review`; embed that section in the prompt exactly as for template-backed lanes, and use the same scratchpad delivery.
@@ -185,9 +212,11 @@ Minor findings remain in the verdict and are never fixed automatically. The sele
 
 ### 9. Failure & Timeout Handling
 
-- **§1 Scratchpad invalid / done-criteria fail:** `send_input` the specific gap and re-arm, up to a small retry cap (~2). On the cap, **escalate — the mechanism depends on the harness**: for `Omp`, `close_process` + `spawn_agent(extra_args=["--model", <stronger>])` (resend the full reviewer prompt, smoke-test, re-arm); for a harness whose model you control by its own flag, respawn with the stronger model in *that* harness's form; for a harness on a fixed default (non-Omp `launch_args` passes no model, so respawning it just relaunches the same default — not an escalation), instead switch to another available harness from `list_agent_tools` and respawn there. (`restart_process` only relaunches the same spec and cannot change the model.) If no stronger model and no alternate harness is available, abort the lane, mark its todo failed, record the reason in a scratchpad, and present that lane as MISSING in the verdict.
+- **Runtime capability or cache failure:** Treat an expired, malformed, unreadable, or rejected cache entry as unavailable. Refresh discovery once, reapply caller choices, and retry affected workers with the identical real first prompts and pinned slices only when the approved harness/model remains unchanged. If discovery changes the selection, return to the combined confirmation. Never fall back to the rejected cache. Cache write failure is non-fatal after successful smoke testing.
+- **Ambiguous slow boot:** The concurrent `wait_ms=250` sends are intentionally short. After one parallel status/output inspection, arm one delayed wake for only the ambiguous workers. Explicit runtime errors fail immediately. Do not add per-worker serial waits.
+- **§1 Scratchpad invalid / done-criteria fail:** `send_input` the specific gap and re-arm, up to a small retry cap (~2). On the cap, close the worker. Any escalation to a stronger model or alternate harness follows the runtime-selection rules: reuse the identical pinned SHAs, lane slice, template, and prompt; if the harness/model differs from the approved plan, return to Step 3 before respawning. If no approved selection can recover the lane, mark its todo failed, record the reason in a scratchpad, and present that lane as MISSING.
 - **§2 Worker never goes idle (timeout wake, `running`):** distinguish stuck (no new output) from slow (still producing). Stuck → escalate per §1. Slow → extend `max_wait_ms` once (~2×) and re-arm.
-- **§3 Worker crashes (`exited`/error):** re-spawn once on the same harness/model, then once escalated per §1 (stronger model if the harness supports it, else an alternate harness); if both fail, mark the todo blocked, raise an alert scratchpad, stop dispatching.
+- **§3 Worker crashes (`exited`/error):** Re-spawn once with the same approved harness/model and identical prompt. A later escalation follows §1 and requires a new combined confirmation if the runtime changes. If recovery fails, mark the todo blocked, raise an alert scratchpad, and stop dispatching that lane.
 - **§4 `gh` failures (auth expired, rate limit, no permissions on a fork):** don't abort — fall back to plain git, but reconstruct **both** pinned SHAs (Scope requires base *and* head). (1) **Base remote:** `origin` is often the contributor's fork while `refs/pull/<n>/head` lives on the *base* repo — match `git remote -v` URLs to the base repo (or the conventional `upstream`) and verify with `git ls-remote --exit-code <base-remote> refs/pull/<n>/head`; if no remote exposes it, halt and ask the user to add the base repo as a remote. (2) **Head:** `git fetch <base-remote> refs/pull/<n>/head`, then capture `head_sha=$(git rev-parse FETCH_HEAD)` immediately (a later fetch overwrites `FETCH_HEAD`). (3) **Target base branch:** `refs/pull/<n>/head` does NOT reveal it and `gh` is down, so require `--base <ref>` (or another authoritative source for the PR's base) — **do not assume the default branch**, a non-default-base PR would be reviewed against the wrong base; if the base cannot be determined, halt and ask, do not proceed. (4) **Base SHA:** `git fetch <base-remote> <base-branch>`, then `base_sha=$(git rev-parse FETCH_HEAD)`. (5) Diff `git diff "$(git merge-base "$base_sha" "$head_sha")...$head_sha"` and read contents via `git show <sha>:<path>`. In the verdict, note that PR metadata (title, description, comments) is unavailable — and, if the base had to be supplied manually, note that too. Auth errors → tell the user to run `gh auth login`; rate limits → back off, don't retry in a loop.
 - Use exponential backoff on re-arm (double `max_wait_ms`, cap ~10 min) so slow-but-progressing workers don't trigger wake storms.
 
@@ -206,10 +235,14 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER present lead assumptions as established facts**, especially anything derived from a possibly-stale local tree. Label them provisional for reviewers to verify against the head.
 - **NEVER exceed 5 spawned workers** (counted per worker, including each per-zone `conventions` instance). The refinement round scales O(n²).
 - **NEVER assume idle means done.** Inspect `get_process_status` first, then verify the lane's scratchpad is populated per its template before completing.
-- **NEVER hardcode the agent tool id, and NEVER bias selection toward a particular harness by name or `tool_type`** — resolve it at runtime via `list_agent_tools`: the caller-specified harness if given, else any returned entry (all are spawnable agent runtimes). If the caller named a harness that is not returned, **halt and report the choices — never silently substitute another.** Halt only when `list_agent_tools` returns nothing at all (Solo MCP is the hard dependency).
-- **NEVER escalate a stuck/failed worker with `restart_process`** (it can't change the spec) — `close_process` + `spawn_agent`. And **NEVER "escalate" a fixed-default harness by respawning it unchanged** (that relaunches the same model); escalate via that harness's own model mechanism, or switch to another available harness, or mark the lane blocked.
-- **NEVER spawn reviewers until the user has separately approved the plan and confirmed exactly one action mode after that approval.** A mode stated before plan approval must be confirmed again at the second gate.
-- **NEVER infer, default, combine, or change the action mode.** Plan approval authorizes reviewer spawning only.
+- **NEVER hardcode or silently substitute a harness or model.** Apply caller choices before cached values. Use only a valid project-scoped runtime-capability cache entry, and refresh discovery once when that entry fails. If the selected runtime changes, return to confirmation before spawning again.
+- **NEVER escalate a stuck/failed worker with `restart_process`** (it cannot change the spec). Close and respawn it under Failure & Timeout Handling, always with the original pinned SHAs and lane slice.
+- **NEVER spawn reviewers until one response explicitly approves the current plan and confirms exactly one action mode.** Any plan revision invalidates the mode and requires the complete combined form again.
+- **NEVER infer, default, or change either confirmation value.** The approved plan and confirmed mode remain separate explicit fields in the same interaction.
+- **NEVER cache authentication, permissions, action modes, repository state, diffs, SHAs, prompts, or worker context.**
+- **NEVER resolve push remotes or inspect worktrees for mutation safety before `auto-fix` is confirmed.** Complete that preflight before reviewer spawn when `auto-fix` is selected.
+- **NEVER spawn or smoke-test reviewers serially.** Create todos, spawn workers, send real first prompts with `wait_ms=250`, and inspect status/output as parallel batches. Use one delayed wake only for ambiguous slow boots.
+- **NEVER derive more than one canonical diff or let a lane reconstruct one.** Every lane slice comes from the pinned canonical diff; use the full canonical diff when a cross-cutting slice would hide interactions.
 - **NEVER post review feedback in `summary` or `auto-fix`, and NEVER post `draft-comments` without separate explicit approval.**
 - **NEVER modify code in `summary`, `draft-comments`, or `auto-post`.** In `auto-fix`, reviewer workers remain read-only and the orchestrator alone owns the isolated fix worktree, implementation, validation, commit, and integration.
 - **NEVER expand `auto-fix` into a change that needs design, planning, or a scope decision.** Keep it as a proposal.
@@ -219,17 +252,18 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER use an unleased force push, weaken the expected old value, rebase onto a moved head, or overwrite a moved branch.**
 - **NEVER use `git update-ref` on a branch checked out in another worktree.** Check `git worktree list --porcelain` immediately before the local compare-and-swap.
 - **NEVER skip `close_process` cleanup.** Orphaned workers consume resources.
-- **NEVER post to GitHub unless `auto-post` was confirmed at the second gate or the user explicitly approved the exact `draft-comments` text.**
+- **NEVER post to GitHub unless `auto-post` was confirmed in the combined form or the user explicitly approved the exact `draft-comments` text.**
 
 ### Reviewer (per worker)
 - **NEVER trust the local working tree for a remote PR's current state.** Fetch head-of-PR contents; a stale tree yields findings already fixed at head.
 - **NEVER claim a CI/lint/test PASS you did not run against the actual PR head** (conventions reviewers). Static assessment is not a PASS.
 - **NEVER omit `file:line` from a finding.**
 - **NEVER review outside your lane.** Put cross-lane concerns in the **Notes for Other Reviewers** section of your own `review-<run>-<lane>` scratchpad; the orchestrator routes them.
+- **NEVER generate, refresh, or re-derive a diff.** Review only the assigned immutable lane slice, or the full canonical diff when supplied, and read supporting file contents only at `pinned_sha`.
 - **NEVER flag a test as tautological without naming the plausible bug it fails to catch** (test-reviewer).
 
 ### Worker mechanics
-- **NEVER assume a harness takes Omp's model flag, and NEVER silently ignore a requested model** — model passing follows the per-harness contract in Prerequisites (canonical): halt or switch harnesses if a requested model can't be honored; a saved default is allowed only when no model was requested (smoke-test it).
-- **NEVER trust spawn acceptance as readiness** — smoke-test with a real first prompt (prepend `agent_instructions`); a model that boots can still refuse the first turn. Empty output with no error banner is a slow boot, not a broken model — extend the wait and re-read.
+- **NEVER assume a harness takes Omp's model flag, silently ignore a requested model, or switch runtime after approval.** Model passing follows Prerequisites; a changed harness/model requires a new combined confirmation before spawn.
+- **NEVER trust spawn acceptance as readiness.** Send the real reviewer prompt as the smoke test with `wait_ms=250`, then inspect all worker statuses and outputs once in parallel. Use one delayed wake only for ambiguous slow boots; explicit runtime errors use the one-refresh fallback.
 - **NEVER send a bare prompt** — prepend `agent_instructions` so the worker has its Solo process/project context.
 - **NEVER busy-poll process output** — wake on `timer_fire_when_idle_all/any`.
