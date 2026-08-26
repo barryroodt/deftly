@@ -42,6 +42,8 @@ If no spec is found, note this in your review and assess the changes on their ow
 
 ## Output Format
 
+The Finding Index is mandatory. Give every Critical, Important, or Minor issue one row; remove the example row when there are no issues. Fingerprint uses the exact diff path, exact source identifier or `<file-scope>`, and a concise lower-kebab-case failure mode. Under Notes, write exactly `- none` when no cross-lane review is needed; otherwise replace it with targeted lane bullets.
+
 ```markdown
 ## Spec Compliance Review
 
@@ -54,6 +56,12 @@ If no spec is found, note this in your review and assess the changes on their ow
 - [x] Requirement 1 — Implemented in `file:line`
 - [ ] Requirement 2 — **Missing**: explanation
 - [x] Requirement 3 — Implemented in `file:line`
+
+### Finding Index
+
+| ID | Severity | Location | Fingerprint | Cross-lane |
+|---|---|---|---|---|
+| `SPEC-F1` | Critical \| Important \| Minor | `file:line` | `<file>:<symbol-or-region>:<failure-mode>` | `none` \| `<lane-id>[, <lane-id>…]` |
 
 ### Issues
 
@@ -77,5 +85,5 @@ If no spec is found, note this in your review and assess the changes on their ow
 - Specific positive observations with file references.
 
 ### Notes for Other Reviewers
-- [Any cross-cutting concerns, each naming the target lane]
+- none
 ```

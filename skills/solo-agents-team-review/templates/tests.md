@@ -82,6 +82,8 @@ Required for `READY`:
 
 ## Output Format
 
+The Finding Index is mandatory. Give every Critical, Important, or Minor issue one row; remove the example row when there are no issues. Fingerprint uses the exact diff path, exact source identifier or `<file-scope>`, and a concise lower-kebab-case failure mode. Under Notes, write exactly `- none` when no cross-lane review is needed; otherwise replace it with targeted lane bullets.
+
 ```markdown
 ## Test Review
 
@@ -89,6 +91,12 @@ Required for `READY`:
 
 ### Plausible-Bug Audit
 - `file:line` — Pattern: <name>. **Bug it fails to catch:** <specific plausible bug>. **Remedy:** <delete | rewrite around invariant X>.
+
+### Finding Index
+
+| ID | Severity | Location | Fingerprint | Cross-lane |
+|---|---|---|---|---|
+| `TEST-F1` | Critical \| Important \| Minor | `file:line` | `<file>:<symbol-or-region>:<failure-mode>` | `none` \| `<lane-id>[, <lane-id>…]` |
 
 ### Issues
 
@@ -105,7 +113,5 @@ Required for `READY`:
 - Specific tests with file references that exemplify good behavioral coverage.
 
 ### Notes for Other Reviewers
-- Missing-coverage flags → correctness or spec-compliance.
-- Style/naming → conventions.
-- File-size or structural smells → structural-simplification.
+- none
 ```
