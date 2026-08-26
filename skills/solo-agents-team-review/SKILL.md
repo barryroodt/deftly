@@ -85,12 +85,12 @@ Resolve runtime capabilities once before showing the plan:
 CACHE_KEY = "solo-agents-team-review/runtime-capabilities/v1"
 CACHE_TTL_SECONDS = 604800
 
-cached = None if refresh_runtime_cache else kv_get(CACHE_KEY)
+cached = None if refresh_runtime_cache or caller_harness or caller_model else kv_get(CACHE_KEY)
 capabilities = cached if valid_runtime_cache(cached) else discover_runtime_capabilities()
 selection = select_runtime(capabilities, caller_harness, caller_model)
 ```
 
-A cache miss, read error, malformed value, forbidden field, or cached set that cannot honor a caller choice causes one fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
+A caller-specified harness or model bypasses the default cache and uses fresh discovery so exact caller constraints cannot inherit a cached selection. A cache miss, read error, malformed value, or forbidden field also causes one fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
 
 Present one required confirmation form containing both fields:
 
@@ -149,7 +149,7 @@ Treat a worker that is running or producing useful review output as ready. An ex
 
 If a cached selection causes an explicit runtime-capability failure, close the affected workers and refresh discovery once. Reapply caller choices. If fresh discovery preserves the harness/model shown in the approved plan, retry only the affected lanes with their identical real prompts and pinned slices. If it changes that selection, close all workers and return to Step 3 so the updated plan and mode receive one new combined confirmation. Never silently change an approved runtime.
 
-After the real prompt verifies the selection, write the fresh capability set and last-known-good selection with `kv_set(CACHE_KEY, value, ttl_seconds=CACHE_TTL_SECONDS)`. A cache write failure is non-fatal: continue with the verified workers, report it once, and do not repeat discovery only to populate the cache.
+After the real prompt verifies an unconstrained selection, write the fresh capability set and last-known-good selection with `kv_set(CACHE_KEY, value, ttl_seconds=CACHE_TTL_SECONDS)`. Caller-constrained runs neither read nor overwrite the default cache. A cache write failure is non-fatal: continue with the verified workers, report it once, and do not repeat discovery only to populate the cache.
 
 Each `reviewer_prompt(lane)` MUST:
 - **Embed the mapped template's full content** (per the lane→template map) and instruct the worker to follow its Output Format exactly.
@@ -267,7 +267,7 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER present lead assumptions as established facts**, especially anything derived from a possibly-stale local tree. Label them provisional for reviewers to verify against the head.
 - **NEVER exceed 5 spawned workers** (counted per worker, including each per-zone `conventions` instance). The refinement round scales O(n²).
 - **NEVER assume idle means done.** Inspect `get_process_status` first, then verify the lane's scratchpad is populated per its template before completing.
-- **NEVER hardcode or silently substitute a harness or model.** Apply caller choices before cached values. Use only a valid project-scoped runtime-capability cache entry, and refresh discovery once when that entry fails. If the selected runtime changes, return to confirmation before spawning again.
+- **NEVER hardcode or silently substitute a harness or model.** Bypass the default cache whenever the caller names either value. Use cached last-known-good selection only for unconstrained runs, and refresh discovery once when it fails. If the selected runtime changes after approval, return to confirmation before spawning again.
 - **NEVER escalate a stuck/failed worker with `restart_process`** (it cannot change the spec). Close and respawn it under Failure & Timeout Handling, always with the original pinned SHAs and lane slice.
 - **NEVER spawn reviewers until one response explicitly approves the current plan and confirms exactly one action mode.** Any plan revision invalidates the mode and requires the complete combined form again.
 - **NEVER infer, default, or change either confirmation value.** The approved plan and confirmed mode remain separate explicit fields in the same interaction.
