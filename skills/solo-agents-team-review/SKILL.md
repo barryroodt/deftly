@@ -112,12 +112,21 @@ Only after `auto-fix` is confirmed, complete update preflight before spawning re
 
 After confirmation and any `auto-fix` preflight, initialize orchestrator-owned `review-<run>-validation`, then write `review-<run>-context` once and keep it read-only. Include only the approved pinned SHAs, PR/spec context, changed-file manifest, pinned instructions, lane scopes and slices, exact commands, evidence owners, accepted CI evidence, validation scratchpad identity, and local-object availability.
 
+#### Lane context
+
+Keep `review-<run>-context` as the immutable audit record and compute its SHA-256 fingerprint from the exact packet content. Before any worker spawns, derive and validate `lane_context[lane]` only from that approved packet and the canonical diff.
+
+Each lane context contains the packet schema/version and fingerprint; pinned base/head SHAs; lane ID, template, and approved scope; complete immutable lane slice; full applicable pinned repository instructions and file mapping; captured PR title/body and spec links; pinned-content read method; lane-relevant validation evidence owners; validation scratchpad identity; and exact output scratchpad name.
+
+The normal path inlines every required field. If the packet contains the field, repair an incomplete lane context before spawn. A genuinely absent required field marks the lane MISSING. Only a field explicitly marked `externalized` in the approved packet may use fallback: record one exact packet heading in the lane context and permit one section read. Never permit a full-packet read, another section, a second fallback read, live metadata, or context reconstruction.
+
 ### 4. Start Reviewers and Missing Validation Concurrently
 
 Create one todo per reviewer lane. Start every reviewer concurrently and, in the same startup phase, start local validation for commands without accepted CI evidence. The real first review prompt is the smoke test; never add a synthetic probe or serial per-worker wait.
 
 ```
-# Derive lane_inputs locally from canonical_diff before any worker call.
+# Derive and validate lane_context[lane] from the approved immutable packet
+# and canonical_diff before any worker call.
 
 # Parallel tool-call batch A: one real Solo call per lane.
 todo_create(<lane todo>) × lanes
@@ -149,7 +158,7 @@ send_input(
 send_input(
     process_id=<lane process id>,
     input=<agent_instructions> + "\n\n" + reviewer_prompt(
-        lane, pinned_base_sha, pinned_sha, lane_inputs[lane]
+        lane, lane_context[lane]
     ),
     wait_ms=250,
 ) × lanes
@@ -178,10 +187,11 @@ The CI snapshot and local terminals form one evidence pipeline. Each terminal gr
 
 Each `reviewer_prompt(lane)` MUST:
 - **Embed the mapped template's full content** (per the lane→template map) and instruct the worker to follow its Output Format exactly.
-- **Carry the shared context packet and assigned immutable lane slice.** Include `review-<run>-context`, both pinned SHAs, and the lane's slice identifier. The packet is orchestrator-owned and read-only. State that the slice came from the one canonical diff.
-- **Read supporting content from the pinned head only.** Prefer `git show <pinned_sha>:<path>` when the packet records local objects as available. Use the pinned GitHub content API only as fallback. Never use the local working tree, run `gh pr diff` or `git diff`, query a moving head, refresh the slice, or derive another diff.
-- **Scope the lane to its assigned slice and contract.** Cross-cutting lanes may receive the full canonical diff. Pinned repository instructions and file contents may supply context but do not authorize expanding or reconstructing the diff.
-- **Enforce static review.** Include the validation evidence-owner map and `review-<run>-validation`. The reviewer may assess CI configuration and evidence already present, but never runs tests, builds, linters, formatters, type checks, generators, or another validation command. Never claim PASS without orchestrator-owned evidence.
+- **Embed the complete validated `lane_context[lane]` in the real first prompt.** Include its packet schema/version and SHA-256 fingerprint, both pinned SHAs, lane identity/template/scope, complete immutable slice, applicable pinned instructions, captured PR/spec context, pinned-content read method, lane-relevant validation owners, validation scratchpad identity, and exact output scratchpad. The worker does not read `review-<run>-context` on the normal path.
+- **Fail closed on missing inline context.** Repair fields from the approved packet before spawn. A genuinely absent required field marks the lane MISSING. Only an explicitly `externalized` field may name one exact packet heading as fallback; the worker may read that section once and nothing else.
+- **Read supporting content from the pinned head only.** Use the method embedded in `lane_context[lane]`: prefer `git show <pinned_sha>:<path>` when local objects are available, otherwise use the pinned GitHub content API. Never use the local working tree, run `gh pr diff` or `git diff`, query a moving head, refresh the slice, or derive another diff.
+- **Scope the lane to its inline approved scope and contract.** Cross-cutting lanes may receive the full canonical diff. Inline pinned instructions and file contents may supply context but do not authorize expanding or reconstructing the diff.
+- **Enforce static review.** Use inline lane-relevant validation owners and `review-<run>-validation`. The reviewer may assess CI configuration and available evidence, but never runs a validation command or claims PASS without orchestrator-owned evidence.
 - **Require a valid Finding Index.** Include one row for every Critical, Important, or Minor issue. Normalize fingerprint as `<file>:<symbol-or-region>:<failure-mode>`: exact diff path, exact source identifier or `<file-scope>`, and a concise lower-kebab-case failure mode. Set `Cross-lane` to `none` unless another lane must supply evidence or adjudication.
 - **Deliver via one scratchpad:** write the complete review (all sections, including **Notes for Other Reviewers**) to `review-<run>-<lane>`. That scratchpad is the delivery channel and the cross-lane channel; the worker writes only its own. Do not report other lanes' issues as your own findings.
 - **Treat any "facts" the orchestrator supplies as provisional** and verify them against the PR head; correct the orchestrator if wrong.
@@ -279,6 +289,7 @@ Minor findings remain in the verdict and are never fixed automatically. The sele
 
 ### 9. Failure & Timeout Handling
 
+- **Lane-context validation failure:** Do not spawn a lane with an incomplete schema or mismatched packet fingerprint. Repair only from the approved immutable packet. A genuinely absent required field marks the lane MISSING. Permit fallback only for one explicitly `externalized` field and exact packet heading. A worker that reads the packet on the normal path, reads broadly, uses a second fallback, queries live metadata, or reconstructs context violates the prompt contract: close it and recover with the identical validated inline context.
 - **Runtime capability or cache failure:** Treat an expired, malformed, unreadable, or rejected cache entry as unavailable. Refresh discovery once, reapply caller choices, and retry affected workers with the identical real first prompts and pinned slices only when the approved harness/model remains unchanged. If discovery changes the selection, return to the combined confirmation. Never fall back to the rejected cache. Cache write failure is non-fatal after successful smoke testing.
 - **Ambiguous slow boot:** The concurrent `wait_ms=250` sends are intentionally short. After one parallel status/output inspection, arm one delayed wake for only the ambiguous workers. Explicit runtime errors fail immediately. Do not add per-worker serial waits.
 - **§1 Scratchpad invalid / done-criteria fail:** `send_input` the specific gap and re-arm, up to a small retry cap (~2). On the cap, close the worker. Any escalation to a stronger model or alternate harness follows the runtime-selection rules: reuse the identical pinned SHAs, lane slice, template, and prompt; if the harness/model differs from the approved plan, return to Step 3 before respawning. If no approved selection can recover the lane, mark its todo failed, record the reason in a scratchpad, and present that lane as MISSING.
@@ -313,6 +324,8 @@ Reviewer workers only read pinned content and write their own scratchpads. They 
 - **NEVER resolve push remotes or inspect worktrees for mutation safety before `auto-fix` is confirmed.** Complete that preflight before reviewer spawn when `auto-fix` is selected.
 - **NEVER spawn or smoke-test reviewers serially.** Create todos, spawn workers, send real first prompts with `wait_ms=250`, and inspect status/output as parallel batches. Use one delayed wake only for ambiguous slow boots.
 - **NEVER derive more than one canonical diff or let a lane reconstruct one.** Every lane slice comes from the pinned canonical diff; use the full canonical diff when a cross-cutting slice would hide interactions.
+- **NEVER spawn an incomplete or unvalidated `lane_context[lane]`, derive it from another source, or let a required field silently disappear.**
+- **NEVER make `review-<run>-context` a routine worker input.** Inline the complete lane context. One explicitly externalized field may permit one exact-section read once; all broader fallback is forbidden.
 - **NEVER let a worker create, modify, or replace `review-<run>-context`, `review-<run>-validation`, or `review-<run>-timings`.**
 - **NEVER prefer a network read when the required pinned Git object is available locally.**
 - **NEVER give one validation command more than one evidence owner.** Its owner is one accepted authoritative CI result or the local validation runner.
@@ -344,6 +357,7 @@ Reviewer workers only read pinned content and write their own scratchpads. They 
 - **NEVER omit `file:line` from a finding.**
 - **NEVER review outside your lane.** Put cross-lane concerns in the **Notes for Other Reviewers** section of your own `review-<run>-<lane>` scratchpad; the orchestrator routes them.
 - **NEVER generate, refresh, or re-derive a diff.** Review only the assigned immutable lane slice, or the full canonical diff when supplied, and read supporting file contents only at `pinned_sha`.
+- **NEVER read `review-<run>-context` on the normal path.** Use the inline lane context. If one field is explicitly externalized, read only the named packet section once; never read the full packet, another section, live metadata, or reconstruct context.
 - **NEVER modify the shared context, validation, or timings records, or substitute moving PR metadata for pinned values.**
 - **NEVER run tests, builds, linters, formatters, type checks, generators, or another validation command, and NEVER create a validation worktree, terminal, process, or lock.**
 - **NEVER omit or malform the Finding Index.** Give every Critical, Important, or Minor issue one row and normalize its fingerprint.
