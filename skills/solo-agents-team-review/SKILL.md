@@ -47,6 +47,7 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 ### 1. Scope
 
 - **Pin the PR head AND base, review only from those SHAs, never the local working tree.** For a remote PR: `gh pr view <n> --json headRefOid,baseRefOid` captures both SHAs at scope time. A local checkout may be on a stale branch, and the PR's current head can move after you pin it (a re-push mid-review), so anything but the captured SHAs silently reviews the wrong code (a common source of phantom findings, e.g. a "divergence" that does not exist at the pinned head). Build **one immutable diff** from the pinned SHAs — `gh api repos/<owner>/<repo>/compare/<base-sha>...<head-sha>` or `git diff <base-sha>...<head-sha>` — and hand THAT to reviewers. Use `gh pr diff <n>` only before pinning, or as a convenience after verifying the current head still equals your pinned SHA.
+- **Capture the update target during scope.** Record `pinned_sha`, the reviewed branch, and its exact destination. For a PR, also capture `headRefName`, `headRepository`, `headRepositoryOwner`, and `isCrossRepository`, then resolve the push remote for that head repository. For a local-only review, record the full local ref `refs/heads/<branch>` and its current object ID. Treat `pinned_sha` as the expected old value for every later branch update.
 - **No PR number (local-branch auto-detect):** the same pinning discipline applies — pin a SHA and review only from it.
   - **Pin first:** `pinned_sha=$(git rev-parse HEAD)` at scope time. That SHA — not "the current branch" — is the review head; if the user keeps committing, the review still covers `pinned_sha`. Everything below uses this variable, never a fresh `HEAD`.
   - **Base:** use `--base <ref>` if given. Otherwise discover the default branch and resolve it to a ref that **actually exists** (a local branch of that name may not exist, so prefer the remote-tracking form). The two discovery commands return **different shapes** — handle each: `gh repo view --json defaultBranchRef -q .defaultBranchRef.name` returns a **bare** name (`main`) → prefix it (`origin/main`); `git symbolic-ref --short refs/remotes/origin/HEAD` returns an **already-prefixed** ref (`origin/main`) → use as-is (do not prefix again). Verify with `git rev-parse --verify --quiet <ref>`; if it does not resolve, fall back to a local `<default>` only if it exists, else halt and ask for `--base`. Then `merge_base=$(git merge-base <resolved-base> "$pinned_sha")` — against the pinned SHA, never a live `HEAD`.
@@ -69,9 +70,18 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 
 Rules: pick the **minimum set**; **cap at 5 spawned workers** — the cap counts workers, not lanes: each per-zone `conventions:<zone>` instance counts individually, because the refinement round is O(n²) in workers. If language zones push the count past 5, merge the least-changed zones into a single `conventions` worker, then drop optional lanes (`structural-simplification` first, then `specialist`); skip `structural-simplification` for tiny localized diffs; always include `spec-compliance` for features; add `test-reviewer` when test paths change; add a `specialist` only when a domain skill encodes knowledge the templates miss.
 
-### 3. Present the Plan
+### 3. Present the Plan and Confirm the Action Mode
 
-Show composition (lane → template → scope), the worker model, and the pinned head SHA. Wait for approval before spawning.
+Before spawning any reviewer, complete two separate confirmation gates in order:
+
+1. **Review plan:** Show the composition (lane → template → scope), worker harness and model, and pinned head SHA. Wait for the user to approve or revise the plan.
+2. **Action mode:** After plan approval, ask the user to select exactly one mode:
+   1. **Summary only (`summary`):** Return the unified verdict. Do not draft or post comments. Do not modify code.
+   2. **Draft review comments for approval (`draft-comments`):** Return the unified verdict and exact proposed comments. Wait for explicit approval before posting them. Do not modify code.
+   3. **Automatically post review feedback (`auto-post`):** Return the unified verdict and post the final review feedback without another approval. Do not modify code.
+   4. **Automatically fix Critical/Important issues (`auto-fix`):** Have the orchestrator fix and verify eligible Critical and Important findings, then update the reviewed branch without another approval. Before spawning reviewers, require an unambiguous update target captured during scope. A local-only target must not be checked out in another worktree because updating its ref behind that worktree is unsafe. If these conditions are not met, report that `auto-fix` is unavailable and ask for another mode. Review workers remain read-only. Do not post review feedback. Keep changes that need design, planning, or a scope decision as proposals.
+
+The modes are mutually exclusive. A mode named in the initial request may be shown as the proposed selection, but the user must confirm it after approving the plan. Never infer a mode from the request, plan approval, prior context, repository ownership, or available permissions. Never select a default. Spawn reviewers only after both gates are complete. If either answer is missing or ambiguous, stop and ask for it.
 
 ### 4. Spawn Reviewers as Solo Workers
 
@@ -155,9 +165,23 @@ Compile, deduped:
 - **Keep it human-scannable.** Lead with what does NOT block merge, then the few findings that matter as short bold headlines + their consequence. Push `file:line` detail, per-test lists, and logs down or out. The scratchpads keep the detail; the verdict is a summary for a human, not a transcript.
 - **Red CI triage.** Read the failing job log and classify: code failure (introduced by the diff) vs environmental (missing secrets, fork-PR limitation, flakiness, unrelated pre-existing breakage). Prove it (e.g. all failures share a missing-key/auth cause while the unit suite is green). Do NOT claim a maintainer re-run fixes a fork-secret failure if the workflow runs secret-dependent tests unconditionally on `pull_request` — fork re-runs still receive no secrets; the real fix is a workflow change. Attribute a failure only to the cause the log shows.
 
-### 8. Preview Before Posting
+### 8. Execute the Selected Action Mode
 
-If the review will be posted to GitHub, show the exact comment text and wait for explicit confirmation. NEVER post without it. Match the repo/author's correspondence conventions and summarise hard — a handful of lines, not the full verdict.
+Posting and code changes are fail-closed. Perform neither unless the confirmed mode explicitly authorizes that action.
+
+- **`summary`:** Present the unified verdict and stop.
+- **`draft-comments`:** Present the unified verdict and the exact proposed comment text. Wait for explicit approval before posting. If approved, post only that text. Otherwise stop.
+- **`auto-post`:** Post the final review feedback, then present the unified verdict with a link to the posted review. Do not preview it or request another approval because the confirmed mode is the posting authorization.
+- **`auto-fix`:** Reviewer workers remain read-only. The orchestrator owns one isolated fix worktree created from `pinned_sha` and completes this phase without pausing:
+  1. Build the fix set only from deduplicated, verified, non-disputed Critical and Important reviewer findings in the unified verdict. Keep Minor findings, lead-authored concerns, failed fixes, and changes that need design, planning, or a scope decision as proposals.
+  2. Immediately before editing, read the destination head from its source of truth. For a PR, read `refs/heads/<reviewed-branch>` from the captured head-repository remote. For a local-only branch, read the captured local ref. Stop unless its object ID equals `pinned_sha` exactly.
+  3. Create a new isolated worktree at `pinned_sha` and a temporary fix branch whose first commit descends directly from `pinned_sha`. Make all edits there. Do not edit the user's working tree, reuse a reviewer worktree, or invent findings while implementing the reviewed fix set.
+  4. Run the targeted tests for every changed behavior, then run all repository-required checks for the affected areas. If any required check fails, do not commit or update the reviewed branch. Report the finding, command, and observed failure, then keep that fix as a proposal.
+  5. Commit the complete verified fix set in the isolated worktree. If no verified changes remain, do not create a commit or update a branch.
+  6. Immediately before integration, read the destination head again and require it to equal `pinned_sha`. For a remote PR branch, push the fix commit to the captured head-repository remote with `git push --force-with-lease=refs/heads/<reviewed-branch>:<pinned_sha> <head-remote> <fix-commit>:refs/heads/<reviewed-branch>`. A lease rejection is a stale-head stop; never retry with a broader force. For a local-only branch, run `git worktree list --porcelain` immediately before integration and stop if the target branch is checked out anywhere outside the isolated fix worktree. Only an unowned target ref may be updated with `git update-ref refs/heads/<reviewed-branch> <fix-commit> <pinned_sha>` as an atomic compare-and-swap. A worktree conflict or compare failure is the same stale-head stop; leave the verified fix commit available for manual review.
+  7. Report the fix commit, destination, findings fixed, and validation results. Report each skipped or failed finding with its reason. If a stale-head check or integration fails, state that no branch update occurred and keep any verified commit available for manual review. Do not post review feedback.
+
+Minor findings remain in the verdict and are never fixed automatically. The selected mode does not change during the run. A later request for an action outside that mode is a new explicit authorization.
 
 ### 9. Failure & Timeout Handling
 
@@ -184,8 +208,18 @@ Reviewers only read the repo and each writes its own scratchpad, so they paralle
 - **NEVER assume idle means done.** Inspect `get_process_status` first, then verify the lane's scratchpad is populated per its template before completing.
 - **NEVER hardcode the agent tool id, and NEVER bias selection toward a particular harness by name or `tool_type`** — resolve it at runtime via `list_agent_tools`: the caller-specified harness if given, else any returned entry (all are spawnable agent runtimes). If the caller named a harness that is not returned, **halt and report the choices — never silently substitute another.** Halt only when `list_agent_tools` returns nothing at all (Solo MCP is the hard dependency).
 - **NEVER escalate a stuck/failed worker with `restart_process`** (it can't change the spec) — `close_process` + `spawn_agent`. And **NEVER "escalate" a fixed-default harness by respawning it unchanged** (that relaunches the same model); escalate via that harness's own model mechanism, or switch to another available harness, or mark the lane blocked.
+- **NEVER spawn reviewers until the user has separately approved the plan and confirmed exactly one action mode after that approval.** A mode stated before plan approval must be confirmed again at the second gate.
+- **NEVER infer, default, combine, or change the action mode.** Plan approval authorizes reviewer spawning only.
+- **NEVER post review feedback in `summary` or `auto-fix`, and NEVER post `draft-comments` without separate explicit approval.**
+- **NEVER modify code in `summary`, `draft-comments`, or `auto-post`.** In `auto-fix`, reviewer workers remain read-only and the orchestrator alone owns the isolated fix worktree, implementation, validation, commit, and integration.
+- **NEVER expand `auto-fix` into a change that needs design, planning, or a scope decision.** Keep it as a proposal.
+- **NEVER add a finding to the `auto-fix` set.** Fix only deduplicated, verified, non-disputed Critical and Important reviewer findings from the unified verdict.
+- **NEVER edit or integrate when the destination head differs from `pinned_sha`.** Re-read it immediately before editing and immediately before pushing or updating the local ref.
+- **NEVER push an unverified fix.** Targeted tests and every repository-required check for the affected areas must pass first.
+- **NEVER use an unleased force push, weaken the expected old value, rebase onto a moved head, or overwrite a moved branch.**
+- **NEVER use `git update-ref` on a branch checked out in another worktree.** Check `git worktree list --porcelain` immediately before the local compare-and-swap.
 - **NEVER skip `close_process` cleanup.** Orphaned workers consume resources.
-- **NEVER post to GitHub without explicit confirmation.**
+- **NEVER post to GitHub unless `auto-post` was confirmed at the second gate or the user explicitly approved the exact `draft-comments` text.**
 
 ### Reviewer (per worker)
 - **NEVER trust the local working tree for a remote PR's current state.** Fetch head-of-PR contents; a stale tree yields findings already fixed at head.
