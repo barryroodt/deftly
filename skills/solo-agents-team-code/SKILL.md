@@ -11,7 +11,22 @@ Solo MCP lets one orchestrator agent spawn worker sub-agents, hand them tasks, t
 
 **Hard dependency: Solo MCP** (and a selected project). Everything else is harness-agnostic — the orchestrator drives whatever agent harness Solo can spawn, keying launch, model, and escalation to that harness's own contract. Stop only if Solo MCP is unavailable or Solo can spawn no agent harness at all.
 
-**Core principle:** spawn a worker, arm an idle-fire timer for it, and let Solo wake you when it stops. Never busy-poll process output.
+**Core principle:** send a worker one bounded task, wait through Solo lifecycle events when available, and verify observable done-criteria. Never busy-poll process output.
+
+## Live Solo Preflight
+
+Inspect the installed Solo tool surface before dispatch. Use `mcp_tools_summary` when available, or the live tool catalog. Call `whoami` in a fresh Solo session when available; otherwise pass the confirmed `project_id` explicitly.
+
+Project scope, `list_agent_tools`, `spawn_agent`, `send_input`, process status, and process output are required. Todos, scratchpads, timers, locks, and KV are optional coordination groups. Missing optional groups must not block worker startup.
+
+Use these fallbacks:
+
+- Without todos, keep the task and dependency state in a scratchpad or in orchestrator memory.
+- Without scratchpads, keep bounded handoffs in todo comments or orchestrator memory.
+- Without timers, inspect workers only on a new user turn or another Solo lifecycle event. Never poll or sleep.
+- Without locks, dispatch only work with disjoint ownership. Do not run overlapping edits concurrently.
+
+Use the live tool schemas for every mutation. Never pass a revision, response mode, or other parameter only because another Solo install documents it.
 
 ## Spawn Defaults
 
@@ -53,36 +68,54 @@ send_input(process_id=w["process_id"],
 
 ## The Idle-Fire Loop
 
-Instead of polling, arm a timer that wakes the orchestrator when the worker goes quiet:
+When timers are available, arm the timer only after the real first prompt is sent:
 
 ```
 timer_fire_when_idle_any(
   processes=[<worker process_id>],
   max_wait_ms=600000,
-  body="<worker> wake: FIRST call get_process_status; running/producing → timeout §2; exited/error → crash recovery §3; idle → verify Task N done-criteria (clean → todo_complete + dispatch next; fail → send_input the failing criteria then re-arm).",
+  body="<worker> wake: FIRST call get_process_status; running/producing → use producing-timeout recovery; exited/error → use crash recovery; idle → verify Task N done-criteria (clean → persist handoff + complete todo + inspect newly unblocked work; fail → send_input the failing criteria then re-arm).",
 )
 ```
 
-On wake the same static `body` is injected whether the worker went idle, hit `max_wait_ms`, or exited — the body carries no wake-reason, so **inspect the worker yourself first**: call `get_process_status(process_id=<worker>)` (corroborate with `get_process_output` for output progress). Branch on the reported state:
-- **`running` / producing new output** (timeout wake, work unfinished): do NOT run done-criteria. Go to Failure & Timeout Handling §2 (slow vs stuck).
-- **`exited` / error** (process is dead): do NOT `send_input` or re-arm against a dead process. Go to Failure & Timeout Handling §3 (crash recovery — re-spawn).
-- **`idle`** (alive but quiet): verify against the done-criteria yourself. Idle != done:
-  ```
-  # Verification procedure on idle wake:
-  git status --porcelain          # expect empty (clean tree)
-  git log --oneline -1            # expect commit matching task
-  <run project tests>             # expect pass
-  # All pass -> todo_complete + dispatch next
-  # Any fail -> send_input the failing criteria, re-arm timer, yield (or escalate per retry count)
-  ```
-- **If done:** `todo_complete(todo_id, completed=true)`, then `send_input` the next task (or `close_process` if the worker is finished).
-- **If not done:** `send_input` the worker the specific failing criteria (what's still expected vs what you observed) so it has something to act on, *then* re-arm the timer and yield. Re-arming without corrective input is a no-op, the idle worker has nothing new to do.
+`timer_fire_when_idle_any` waits for a new idle transition and can ignore a process that was already idle when armed. `timer_fire_when_idle_all` can return `already_satisfied`; inspect the barrier immediately because no later wake will occur. Give every timer a finite maximum wait and a self-contained body with process IDs, task IDs, state locators, and the next action. Cancel obsolete timers when work completes or changes owner.
 
-`timer_fire_when_idle_all` waits for a whole set of workers; `timer_set` schedules a plain delay. Add `delivery_process_id` only to wake a different agent.
+On wake the same body is injected whether the worker went idle, hit `max_wait_ms`, or exited. Inspect the worker first with `get_process_status`, then read only new output when needed:
 
-**Decision rule:** one worker or first-finished dispatch → `timer_fire_when_idle_any`; barrier before integration (all workers must finish) → `timer_fire_when_idle_all`; plain delay unrelated to worker idleness → `timer_set`.
+- **`running` / producing new output:** do not run done-criteria. Use the producing-timeout recovery path.
+- **`exited` / error:** do not send input or re-arm against a dead process. Use the crash recovery path.
+- **`idle`:** verify the observable done-criteria. Idle is not completion.
 
-**Multi-worker fan-out:** create and assign todos *before* spawning any workers — one todo per worker, assigned in dependency order — so each worker's done-criteria map to a specific todo. Cap concurrency at 2–3 workers unless tasks touch disjoint files; more workers multiply lock contention and verification load faster than they add throughput.
+Without timers, wait for a new user turn or Solo lifecycle event, then perform one batched status inspection. State that automatic wake-up is unavailable. Never replace timers with polling.
+
+### Complete and unblock
+
+When the worker satisfies its done-criteria:
+
+1. Persist its handoff in the selected state adapter. Include changed artifacts, checks, remaining risk, active child processes, and restart context. Read it back when the adapter supports reads.
+2. When todos are available, call `todo_complete(completed=true, response_mode="rich")` if the live schema supports that response mode.
+3. Call `todo_get` when available and require the task to report complete.
+4. Inspect each dependent task returned or affected by completion. Dispatch it only when Solo reports all blockers satisfied.
+5. Send the newly actionable task to its assigned worker, or spawn its worker, then read back the canonical process status.
+
+Without todos, mark the task complete in the scratchpad or orchestrator state, recompute dependency edges, and dispatch only newly actionable work.
+
+If done-criteria fail, send the specific gap to the worker before another wait. Re-arming an idle worker without corrective input gives it nothing to do.
+
+Use `timer_fire_when_idle_any` for first-finished dispatch, `timer_fire_when_idle_all` for a real barrier, and `timer_set` only for a delay unrelated to process idleness.
+
+For multi-worker fan-out, define one task per worker before spawning and encode dependency order in the available state adapter. Cap concurrency at 2–3 workers unless edit ownership is disjoint.
+
+## Solo Mutation Safety
+
+Treat a successful mutation response as acceptance, not proof of intended state. Capability-gate readback through the live schema:
+
+- process creation or restart through `get_process_status`,
+- todo creation, blockers, and completion through `todo_get` when available,
+- scratchpad changes through `scratchpad_read` when available,
+- timer creation or cancellation through its response or `timer_list` when available.
+
+Use `expected_revision` only when the installed scratchpad operation exposes it. On conflict, re-read the affected section and reapply once. Without revision support, prefer append-only updates and read them back. If no readback exists, label the state unverified.
 
 ## Failure & Timeout Handling
 
@@ -90,7 +123,7 @@ On wake the same static `body` is injected whether the worker went idle, hit `ma
 
 ## Coordination Surface
 
-**MANDATORY:** when you need to pick a coordination tool (todos, scratchpads, locks, identity, lifecycle), load `references/coordination-surface.md` for the full tool inventory. **Do NOT load it during routine dispatch** — the spawn/idle-fire/verify loop above needs no coordination tools.
+**MANDATORY:** when you need exact todo, scratchpad, lock, identity, or lifecycle operations, load `references/coordination-surface.md`. **Do NOT load it during routine dispatch** when the live tool schema already answers the call.
 
 ## Common Mistakes
 
@@ -98,6 +131,6 @@ On wake the same static `body` is injected whether the worker went idle, hit `ma
 - **NEVER** assume one harness's model flag works for another, and **NEVER** silently ignore a requested model — **INSTEAD** pass a requested model in the *selected* harness's documented form (`Omp`: per-launch `--model <provider>/<model>`; others: their own flag); if the selected harness has no documented model mechanism, halt and report (or switch harnesses) rather than dropping the model. Only when no model is requested may a harness run its saved default; always smoke-test.
 - **NEVER** assume idle means done (a worker going quiet only means it stopped talking) — **INSTEAD** verify done-criteria yourself before completing a todo or dispatching the next task (see the verification procedure in The Idle-Fire Loop).
 - **NEVER** send a bare prompt to a worker — **INSTEAD** prepend `agent_instructions` so the worker has its Solo process/project context.
-- **NEVER** busy-poll process output — **INSTEAD** use `timer_fire_when_idle_any/all` to wake on idle.
+- **NEVER** busy-poll process output — **INSTEAD** use idle-fire timers when available; otherwise inspect once on a new user turn or Solo lifecycle event.
 - **NEVER** wait indefinitely on a stalled worker — **INSTEAD** after 2 failed retries escalate per the selected harness: a selectable-model harness → `close_process` + `spawn_agent` with a stronger model in that harness's form; a fixed-default harness → switch to another available harness (respawning it unchanged is not an escalation); if neither is possible, mark the todo blocked. `restart_process` only relaunches the same spec.
-- **NEVER** dispatch multiple workers onto the same resource without lock ordering — **INSTEAD** have each worker `lock_acquire` resources in a consistent order (e.g. alphabetical by path) to prevent deadlocks.
+- **NEVER** dispatch overlapping edits without mutual exclusion — **INSTEAD** use live lock tools in a consistent order when available, or require disjoint ownership.

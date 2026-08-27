@@ -1,9 +1,80 @@
-# Failure & Timeout Handling
+# Failure and Timeout Handling
 
-Load this when done-criteria fail, a worker never goes idle, or a worker crashes — i.e. on any non-clean idle wake or spawn failure.
+Load this reference only after a worker, coordination operation, or dispatch fails. Use the live Solo tool schemas as the source of truth.
 
-1. **Timer fires, done-criteria fail:** retry up to 2× — each retry `send_input`s the worker the specific failing criteria (expected vs observed) *before* re-arming, since re-arming alone gives the idle worker nothing to act on. On the 2nd failure, escalate — **the mechanism depends on the selected harness**: a harness whose model you can select → `close_process` the worker, then `spawn_agent(...)` with the next-stronger model in *that harness's* form (resend `agent_instructions` + task, smoke-test, re-arm); a fixed-default harness → respawning it unchanged is not an escalation, so `close_process` and `spawn_agent` on another available harness from `list_agent_tools`. (`restart_process` cannot change the spec.) If no stronger model and no alternate harness is available, abort, `close_process`, mark the todo failed, and log the reason to a scratchpad.
-2. **Timer expires, worker never went idle:** distinguish stuck (no output progress) from slow (still producing). Stuck → `restart_process`, then resend the saved task/context and smoke-test before re-arming (restart restores only the launch spec, not the work request). Slow → extend `max_wait_ms` once (up to ~2×) and re-arm. Still nothing → abort and log.
-3. **Worker crashes:** re-`spawn_agent` once on the same harness/model; if it fails again, escalate per §1 (a stronger model if the harness supports selecting one, else another available harness), resending context each time. If both fail, mark the todo blocked, raise an alert scratchpad, and stop dispatching new tasks until a human reviews.
+## Classify the failure
 
-Add exponential backoff when re-arming (double `max_wait_ms` each time, cap ~10 min) so slow-but-progressing workers don't trigger wake storms.
+Determine which state applies:
+
+- Worker is idle with incomplete work
+- Worker is producing output after a timer deadline
+- Worker is stuck or crashed
+- Coordination mutation failed
+- Persisted state cannot be read back
+- Todo completion did not persist
+- Completed work did not unblock dependent work
+
+Do not replace a worker until its reachable state is preserved.
+
+## Preserve before replacement
+
+Before restarting, replacing, or closing a worker:
+
+1. Request a handoff when the worker can respond.
+2. Persist a restart packet in the best available adapter.
+3. Read the packet back when the adapter supports reads.
+4. Inspect the worker's latest output and status.
+5. Start the replacement only after the packet is stored.
+
+The packet includes completed work, remaining work, touched files, evidence, blockers, selected harness and model, and the exact next action.
+
+If persistence fails, try the next available adapter. Keep the original worker until the packet is stored or all reachable recovery paths are exhausted.
+
+## Worker recovery ladder
+
+1. **Idle with failed done-criteria:** send the specific failing criteria before waiting again. Retry at most twice. On the second failure, persist the restart packet and escalate.
+2. **Still producing after a timer deadline:** extend the finite wait once, up to about twice the prior wait. Do not run done-criteria while work is still producing.
+3. **Stuck with no output progress:** preserve state, then `restart_process` once. Restart restores the launch specification, not the task. Resend `agent_instructions`, the restart packet, and the bounded task as a real smoke test.
+4. **Crashed:** spawn once with the same harness and model, using the saved restart packet. If that fails, escalate.
+5. **Escalation:** for a harness with selectable models, close only after the handoff is stored, then spawn with the next stronger supported model. For a fixed-default harness, switch to another live harness. `restart_process` is not model escalation.
+
+If no approved runtime can continue, mark the task blocked in the available state adapter and stop dependent dispatch.
+
+## Recover failed mutations
+
+For an optional coordination surface:
+
+1. Re-read the object and current revision when supported.
+2. Retry with only parameters exposed by the live mutation schema.
+3. Read back the result when supported.
+4. Fall back to another available adapter if the surface remains unavailable.
+
+Never add an unsupported revision or response-mode parameter. Record state as unverified when no readback exists.
+
+## Recover todo completion
+
+After marking a todo complete:
+
+1. Read the todo back.
+2. Confirm its completed state.
+3. Find dependent todos returned or affected by completion.
+4. Re-read each dependent todo.
+5. Dispatch each item that Solo reports unblocked and ready.
+6. Leave items blocked when another blocker remains.
+
+If todos are unavailable, update orchestrator-owned dependency state and perform the same blocker check.
+
+## Recover timer wakes
+
+A timer wake is an inspection trigger.
+
+- On `already_satisfied`, inspect immediately.
+- On deadline expiry, inspect worker status and shared state before acting.
+- Re-arm only after corrective input or confirmed ongoing progress.
+- Use exponential backoff when re-arming, capped near ten minutes.
+
+Without timers, wait for a new user turn or lifecycle event. Never poll.
+
+## Escalate honestly
+
+When recovery cannot continue, preserve the restart packet and report the failed operation, last confirmed state, adapter and readback result, remaining blocker, and exact action required to resume.
