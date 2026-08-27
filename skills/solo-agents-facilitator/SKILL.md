@@ -385,7 +385,7 @@ Never:
 - send disposable startup prompts,
 - forward excess context,
 - keep charters, decisions, or recovery state only in process output,
-- close an orchestrator before its durable handoff is read back,
+- close an orchestrator before its handoff is stored in the selected adapter, or before supported readback confirms it,
 - assume a successful Solo mutation produced the intended state,
 - mutate a charter without approval,
 - continue after an unconfirmed runtime change,
