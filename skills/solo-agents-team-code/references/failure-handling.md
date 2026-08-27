@@ -26,11 +26,11 @@ Before restarting, replacing, or closing a worker:
 4. Inspect the worker's latest output and status.
 5. Start the replacement only after the packet is stored.
 
-The packet includes completed work, remaining work, touched files, evidence, blockers, selected harness and model, and the exact next action.
+The packet includes the active task packet ID and schema version, completed work, remaining work, touched files, evidence owners and results, blockers, selected harness and model, and the exact next action.
 
 If persistence fails, try the next available adapter. Keep the original worker until the packet is stored or all reachable recovery paths are exhausted.
 
-The packet includes the active task packet ID and schema version, completed work, remaining work, touched files, evidence owners and results, blockers, selected harness and model, and the exact next action.
+## Worker recovery ladder
 
 1. **Idle with failed done-criteria:** send the specific failing criteria before waiting again. Retry at most twice. On the second failure, persist the restart packet and escalate.
 2. **Still producing after a timer deadline:** extend the finite wait once, up to about twice the prior wait. Do not run done-criteria while work is still producing.
