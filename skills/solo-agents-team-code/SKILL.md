@@ -28,6 +28,34 @@ Use these fallbacks:
 
 Use the live tool schemas for every mutation. Never pass a revision, response mode, or other parameter only because another Solo install documents it.
 
+### Runtime capability cache
+
+When KV is available, use `solo-agents-team-code/runtime-capabilities/v1` as a project-scoped cache key with a TTL of `604800` seconds. Cache only:
+
+- harness/runtime IDs and installation IDs,
+- documented model-selection mechanisms,
+- provider-qualified model IDs,
+- the last selection verified by a real first prompt.
+
+Treat the cache as a selection hint. Always call `list_agent_tools` for current availability and inspect the live tool catalog for schemas before dispatch. Never let cached fields replace, narrow, or override the live response.
+
+Bypass the cache when the caller sets harness or model constraints. Discard a cached selection that conflicts with live capabilities. Write the cache only after the real worker prompt starts useful work. Never cache authentication, permissions, task packets, source context, prompts, or worker state.
+
+A cache miss, stale entry, unavailable KV group, or incompatible schema falls through to live discovery without blocking dispatch.
+
+## Worker Task Packets
+
+Build one immutable task packet before each worker starts. Give it a stable packet ID and schema version. Include:
+
+- exact task, scope, and exclusions,
+- owned files or resources and coordination rules,
+- acceptance criteria and required output shape,
+- dependencies and current inputs,
+- validation commands with one evidence owner each,
+- selected handoff adapter and completion route.
+
+Workers can report facts that invalidate a packet. They must not rewrite its scope, ownership, or acceptance criteria. A material change requires the orchestrator to issue a new packet version and record which version each result answers. Reject stale results after a replacement packet becomes active.
+
 ## Spawn Defaults
 
 - **Pick the harness without name bias.** Resolve at spawn time via `list_agent_tools`: use the **caller-specified** harness if one was given (match by `name` or `id`); otherwise any harness `list_agent_tools` returns — every returned entry is a spawnable agent runtime, so do not filter by name or `tool_type`. If several are returned and the caller named none, pick one and note which (or ask). If a caller named a harness that is not in the list, **halt and report the available names** rather than substituting a different one. Never hardcode the id, it shifts per machine. Halt too if `list_agent_tools` returns nothing — Solo MCP is the hard dependency, not any particular harness.
@@ -66,6 +94,33 @@ send_input(process_id=w["process_id"],
 #   bad   -> auth/model error banner -> close + escalate (selectable model: next slug; fixed default: switch harness)
 ```
 
+## Concurrent Multi-Worker Startup
+
+For independent ready work, start workers concurrently with their real task packets. Keep blocked work out of the batch until its inputs exist.
+
+Use four ordered parallel batches:
+
+1. Create available todo or scratchpad task state for every ready worker.
+2. Spawn every worker with the selected live runtime.
+3. Send every complete real prompt with prepended `agent_instructions` and a short `wait_ms`, such as `250`.
+4. Inspect every process status and output once.
+
+Record each process ID, packet version, owned scope, and expected completion signal. Treat useful work as a successful smoke test. Explicit authentication, model, or launch errors fail immediately. Empty output without an error is an ambiguous slow boot and follows the timer or lifecycle-event fallback.
+
+Partial startup does not cancel successful workers. Recover only failed starts, using the identical active task packet unless a new version is issued.
+
+## Validation Ownership
+
+Assign one evidence owner to each required validation command before dispatch. The owner runs that command once, captures its exact result, and reports it to the orchestrator. Other workers can run narrower checks for their own changes, but must not duplicate an owned repository or integration check.
+
+Run an owned command only after its required artifacts land. The orchestrator checks that every required command has one owner, that evidence matches the active packet versions and final artifacts, and that each failure has a concrete resolution.
+
+## Optional Independent Judgment
+
+Add an independent reviewer or verifier when completion depends on cross-worker integration, security, protocol behavior, or explicit caller-requested judgment. Give it a separate read-only packet with the claim to assess, relevant artifacts, acceptance criteria, and evidence owner map.
+
+This lane is unnecessary for ordinary isolated work. It returns evidence and one `accept`, `reject`, or `blocked` judgment. The orchestrator remains accountable for resolving the result and deciding whether another implementation or judgment pass is necessary.
+
 ## The Idle-Fire Loop
 
 When timers are available, arm the timer only after the real first prompt is sent:
@@ -85,6 +140,21 @@ On wake the same body is injected whether the worker went idle, hit `max_wait_ms
 - **`running` / producing new output:** do not run done-criteria. Use the producing-timeout recovery path.
 - **`exited` / error:** do not send input or re-arm against a dead process. Use the crash recovery path.
 - **`idle`:** verify the observable done-criteria. Idle is not completion.
+
+### Done checks
+
+The orchestrator declares completion only when all applicable checks pass:
+
+```text
+git status --porcelain   # empty, or only the explicitly expected changes
+git log --oneline -1    # expected commit, when the task requires a commit
+<targeted task checks>   # pass against the final artifacts
+<required repo checks>   # pass once under their assigned evidence owners
+```
+
+Also require every worker result to match the active packet version, every required artifact to exist, each handoff to be complete, and shared-state readback to match the final state when supported.
+
+Worker completion, idle state, successful startup, or an optional reviewer verdict cannot replace these checks.
 
 Without timers, wait for a new user turn or Solo lifecycle event, then perform one batched status inspection. State that automatic wake-up is unavailable. Never replace timers with polling.
 
@@ -129,7 +199,7 @@ Use `expected_revision` only when the installed scratchpad operation exposes it.
 
 - **NEVER** hardcode the harness id, assume a specific harness, or filter by name / `tool_type` — **INSTEAD** resolve at runtime via `list_agent_tools`: the caller-specified harness if given, else any returned entry (all are spawnable agent runtimes). If the caller named a harness that is not returned, **halt and report the choices — never silently substitute another.** Halt too if `list_agent_tools` returns nothing at all.
 - **NEVER** assume one harness's model flag works for another, and **NEVER** silently ignore a requested model — **INSTEAD** pass a requested model in the *selected* harness's documented form (`Omp`: per-launch `--model <provider>/<model>`; others: their own flag); if the selected harness has no documented model mechanism, halt and report (or switch harnesses) rather than dropping the model. Only when no model is requested may a harness run its saved default; always smoke-test.
-- **NEVER** assume idle means done (a worker going quiet only means it stopped talking) — **INSTEAD** verify done-criteria yourself before completing a todo or dispatching the next task (see the verification procedure in The Idle-Fire Loop).
+- **NEVER** assume idle means done — **INSTEAD** run the concrete Done checks before completing a todo or dispatching dependent work.
 - **NEVER** send a bare prompt to a worker — **INSTEAD** prepend `agent_instructions` so the worker has its Solo process/project context.
 - **NEVER** busy-poll process output — **INSTEAD** use idle-fire timers when available; otherwise inspect once on a new user turn or Solo lifecycle event.
 - **NEVER** wait indefinitely on a stalled worker — **INSTEAD** after 2 failed retries escalate per the selected harness: a selectable-model harness → `close_process` + `spawn_agent` with a stronger model in that harness's form; a fixed-default harness → switch to another available harness (respawning it unchanged is not an escalation); if neither is possible, mark the todo blocked. `restart_process` only relaunches the same spec.

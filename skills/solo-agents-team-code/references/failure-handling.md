@@ -30,15 +30,13 @@ The packet includes completed work, remaining work, touched files, evidence, blo
 
 If persistence fails, try the next available adapter. Keep the original worker until the packet is stored or all reachable recovery paths are exhausted.
 
-## Worker recovery ladder
+The packet includes the active task packet ID and schema version, completed work, remaining work, touched files, evidence owners and results, blockers, selected harness and model, and the exact next action.
 
 1. **Idle with failed done-criteria:** send the specific failing criteria before waiting again. Retry at most twice. On the second failure, persist the restart packet and escalate.
 2. **Still producing after a timer deadline:** extend the finite wait once, up to about twice the prior wait. Do not run done-criteria while work is still producing.
-3. **Stuck with no output progress:** preserve state, then `restart_process` once. Restart restores the launch specification, not the task. Resend `agent_instructions`, the restart packet, and the bounded task as a real smoke test.
-4. **Crashed:** spawn once with the same harness and model, using the saved restart packet. If that fails, escalate.
+3. **Stuck with no output progress:** preserve state, then `restart_process` once. Restart restores the launch specification, not the task. Resend `agent_instructions`, the active immutable task packet, and the restart packet as a real smoke test.
+4. **Crashed:** spawn once with the same harness and model, using the active task packet and saved restart packet. If that fails, escalate.
 5. **Escalation:** for a harness with selectable models, close only after the handoff is stored, then spawn with the next stronger supported model. For a fixed-default harness, switch to another live harness. `restart_process` is not model escalation.
-
-If no approved runtime can continue, mark the task blocked in the available state adapter and stop dependent dispatch.
 
 ## Recover failed mutations
 

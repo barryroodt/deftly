@@ -54,6 +54,8 @@ Include:
 - Completed work and evidence
 - Remaining work and exact next action
 - Files or resources touched
+- Active task packet ID and schema version
+- Validation evidence owners and collected results
 - Blockers and dependencies
 - Commands or checks still required
 
