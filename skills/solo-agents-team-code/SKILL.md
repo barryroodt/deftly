@@ -165,10 +165,12 @@ When the worker satisfies its done-criteria:
 1. Persist its handoff in the selected state adapter. Include changed artifacts, checks, remaining risk, active child processes, and restart context. Read it back when the adapter supports reads.
 2. When todos are available, call `todo_complete(completed=true, response_mode="rich")` if the live schema supports that response mode.
 3. Call `todo_get` when available and require the task to report complete.
-4. Inspect each dependent task returned or affected by completion. Dispatch it only when Solo reports all blockers satisfied.
-5. Send the newly actionable task to its assigned worker, or spawn its worker, then read back the canonical process status.
+4. Collect every dependent task that Solo reports unblocked.
+5. Dispatch every newly actionable task for which concurrency capacity exists. Reuse an available worker or spawn a worker with the active packet. Keep excess ready work queued when the cap is reached.
+6. Read back the canonical status for each worker that received a new assignment.
+7. Cancel timers for the completed assignment. When its worker has no next assignment, call `close_process` only after the handoff is stored; require confirming readback when the adapter supports it. When reusing the worker, send the next versioned packet before arming a new timer.
 
-Without todos, mark the task complete in the scratchpad or orchestrator state, recompute dependency edges, and dispatch only newly actionable work.
+Without todos, mark the task complete in the scratchpad or orchestrator state, recompute dependency edges, then apply the same capacity, timer, and worker-cleanup transition.
 
 If done-criteria fail, send the specific gap to the worker before another wait. Re-arming an idle worker without corrective input gives it nothing to do.
 
