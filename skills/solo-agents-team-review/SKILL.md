@@ -13,13 +13,18 @@ Parallel, multi-perspective code review where each reviewer is a **Solo MCP work
 
 ## Prerequisites
 
-- **Solo MCP available**, with a project selected. Run `whoami` only in a fresh session; `select_project` only if scope is unset.
-- **An agent harness Solo can spawn.** Resolve it through the project-scoped runtime-capability cache in Step 3. A caller-specified harness always wins and must match a usable `name` or `id`; never silently substitute another harness. Without a caller choice, prefer the cached last-known-good harness, then fresh discovery. Halt only when fresh `list_agent_tools` discovery finds no spawnable harness.
-- **A worker model that follows the selected harness's contract.** A caller-specified model always wins and uses that harness's documented mechanism. `Omp` accepts `--model <provider>/<model>`; other harnesses use their documented flags. A saved harness default is allowed only when the caller did not request a model. Every selected harness/model pair still receives a real-first-prompt smoke test.
-- **Project-scoped runtime-capability cache.** Use Solo KV key `solo-agents-team-review/runtime-capabilities/v1` with a seven-day TTL (`604800` seconds). It may contain harness IDs, documented model mechanisms, discovered provider-qualified models, and the last-known-good selection. Never cache authentication, permissions, action modes, repository state, diffs, SHAs, prompts, or worker context. Caller choices override cached values.
-- **`gh`** for PR metadata and diffs.
+- **Solo project and process tools available**, with a project selected. Run `whoami` only in a fresh session when the live tool exists; otherwise pass the confirmed `project_id` explicitly. Require agent spawning, input, status, output, terminal lifecycle, and scratchpad read/write operations. This review contract uses scratchpads as its immutable audit, validation, cross-lane, and refinement transport.
+- **A live capability preflight.** Use `mcp_tools_summary` when available, or inspect the live tool catalog. KV, todos, timers, and locks are optional coordination groups:
+  - Without KV, perform fresh runtime discovery and skip the seven-day cache.
+  - Without todos, keep lane assignment, status, completion, and failure state with the orchestrator.
+  - Without timers, inspect processes only on a new user turn or another Solo lifecycle event. Never poll or sleep.
+  - Without locks, serialize shared coordination and validation mutations through the orchestrator.
+- **Live mutation schemas.** Pass only parameters exposed by this Solo install. Read back changed state when the capability supports reads. Never infer persistence when readback is unavailable.
+- **An agent harness Solo can spawn.** Resolve it through the cache when KV is available. A caller-specified harness always wins and must match a usable `name` or `id`; never silently substitute another harness.
+- **A worker model that follows the selected harness's contract.** A caller-specified model always wins and uses that harness's documented mechanism. `Omp` accepts `--model <provider>/<model>`; other harnesses use their documented flags. Every selected pair receives a real-first-prompt smoke test.
+- **`gh`** for PR metadata and diffs, with the existing plain-git fallback.
 
-Stop only if Solo MCP (or a selected project scope) is genuinely unavailable, or Solo can spawn no agent harness at all.
+Stop only when a required project, process, scratchpad, harness, or repository-content capability is unavailable. Missing KV, todos, timers, or locks changes the coordination adapter and must not block startup.
 
 ## Invocation
 
@@ -30,7 +35,7 @@ Stop only if Solo MCP (or a selected project scope) is genuinely unavailable, or
 /solo-agents-team-review --refresh-runtime-cache  # bypass cached runtime capabilities
 ```
 
-`--refresh-runtime-cache` forces one fresh capability discovery and replaces the cache only after a real first prompt verifies the selected runtime.
+`--refresh-runtime-cache` forces fresh capability discovery. It replaces the cache only when KV is available and a real first prompt verifies the selected runtime.
 
 ## Reviewer Lanes → Templates (explicit map)
 
@@ -88,12 +93,14 @@ Resolve runtime capabilities once before showing the plan:
 CACHE_KEY = "solo-agents-team-review/runtime-capabilities/v1"
 CACHE_TTL_SECONDS = 604800
 
-cached = None if refresh_runtime_cache or caller_harness or caller_model else prefetched_runtime_cache
+cached = None
+if has_kv and not (refresh_runtime_cache or caller_harness or caller_model):
+    cached = prefetched_runtime_cache
 capabilities = cached if valid_runtime_cache(cached) else discover_runtime_capabilities()
 selection = select_runtime(capabilities, caller_harness, caller_model)
 ```
 
-A caller-specified harness or model bypasses the default cache and uses fresh discovery so exact caller constraints cannot inherit a cached selection. A cache miss, read error, malformed value, or forbidden field also causes one fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
+A caller-specified harness or model bypasses the default cache and uses fresh discovery. Missing KV, a cache miss, read error, malformed value, or forbidden field also causes fresh discovery. Discovery records only harness IDs, documented model mechanisms, and provider-qualified model IDs; it never probes or stores credentials. Do not write the cache yet.
 
 Track these durations separately: `scope`, `machine preflight`, `human confirmation`, `reviewer startup`, `validation`, `review lanes`, `refinement`, and `selected action`. Measure human confirmation from form presentation through approval and exclude it from machine preflight. Report timings to the user after the run, never in posted review text.
 
@@ -112,6 +119,8 @@ Only after `auto-fix` is confirmed, complete update preflight before spawning re
 
 After confirmation and any `auto-fix` preflight, initialize orchestrator-owned `review-<run>-validation`, then write `review-<run>-context` once and keep it read-only. Include only the approved pinned SHAs, PR/spec context, changed-file manifest, pinned instructions, lane scopes and slices, exact commands, evidence owners, accepted CI evidence, validation scratchpad identity, and local-object availability.
 
+Create the context and validation scratchpads through the live schemas, then read them back. Use revision parameters only when the installed mutation exposes them. If readback differs from the approved packet, stop before reviewer startup.
+
 #### Lane context
 
 Keep `review-<run>-context` as the immutable audit record and compute its SHA-256 fingerprint from the exact packet content. Before any worker spawns, derive and validate `lane_context[lane]` only from that approved packet and the canonical diff.
@@ -122,13 +131,13 @@ The normal path inlines every required field. If the packet contains the field, 
 
 ### 4. Start Reviewers and Missing Validation Concurrently
 
-Create one todo per reviewer lane. Start every reviewer concurrently and, in the same startup phase, start local validation for commands without accepted CI evidence. The real first review prompt is the smoke test; never add a synthetic probe or serial per-worker wait.
+Create one todo per reviewer lane when todos are available; otherwise initialize equivalent lane state with the orchestrator. Start every reviewer concurrently and, in the same startup phase, start local validation for commands without accepted CI evidence. The real first review prompt is the smoke test; never add a synthetic probe or serial per-worker wait.
 
 ```
 # Derive and validate lane_context[lane] from the approved immutable packet
 # and canonical_diff before any worker call.
 
-# Parallel tool-call batch A: one real Solo call per lane.
+# Parallel tool-call batch A when todos are available: one real Solo call per lane.
 todo_create(<lane todo>) × lanes
 
 # Parallel tool-call batch B: one real Solo call per lane.
@@ -167,7 +176,7 @@ send_input(
 get_process_status(process_id=<process id>) × all_started_processes
 get_process_output(process_id=<process id>) × all_started_processes
 
-# Only when batch D leaves slow boots ambiguous:
+# Only when batch D leaves slow boots ambiguous and timers are available:
 timer_fire_when_idle_any(
     processes=<ambiguous process ids>,
     max_wait_ms=<one bounded boot grace>,
@@ -177,11 +186,11 @@ timer_fire_when_idle_any(
 
 Each `× ...` line means issue the named existing Solo calls as one parallel tool-call batch. It does not name or require a batch API.
 
-Treat a worker that is running or producing useful review output as ready. An explicit authentication, unsupported-model, missing-runtime, or launch-capability error fails immediately. Empty output without an error is an ambiguous slow boot: arm one delayed wake for only those workers, then inspect each once more. Never wait serially.
+Treat a worker that is running or producing useful review output as ready. An explicit authentication, unsupported-model, missing-runtime, or launch-capability error fails immediately. Empty output without an error is an ambiguous slow boot. With timers, arm one delayed wake for only those workers. Without timers, record the ambiguity and inspect once on the next user turn or Solo lifecycle event. Never wait serially or poll.
 
 If a cached selection causes an explicit runtime-capability failure, close the affected workers and refresh discovery once. Reapply caller choices. If fresh discovery preserves the harness/model shown in the approved plan, retry only the affected lanes with their identical real prompts and pinned slices. If it changes that selection, close all workers and return to Step 3 so the updated plan and mode receive one new combined confirmation. Never silently change an approved runtime.
 
-After the real prompt verifies an unconstrained selection, write the fresh capability set and last-known-good selection with `kv_set(CACHE_KEY, value, ttl_seconds=CACHE_TTL_SECONDS)`. Caller-constrained runs neither read nor overwrite the default cache. A cache write failure is non-fatal: continue with the verified workers, report it once, and do not repeat discovery only to populate the cache.
+After the real prompt verifies an unconstrained selection, write the fresh capability set and last-known-good selection only when KV is available. Caller-constrained runs neither read nor overwrite the default cache. A cache write failure is non-fatal: continue with verified workers, report it once, and do not repeat discovery only to populate the cache.
 
 The CI snapshot and local terminals form one evidence pipeline. Each terminal group emits an explicit start marker, end marker, and independent exit status for every command, and continues to the remaining commands after a failure. The orchestrator writes each command, evidence owner, pinned SHA, terminal state, exit status, and bounded secret-redacted evidence to `review-<run>-validation`. Reviewer workers never write that scratchpad. Parallelize only repository-declared safe groups; unclassified or conflicting commands run sequentially in the same validation worktree.
 
@@ -199,7 +208,9 @@ Each `reviewer_prompt(lane)` MUST:
 
 ### 5. Reviewer and Validation Barrier
 
-Do not busy-poll. Missing validation runs beside reviewer work. Arm one whole-set timer for reviewer workers and, only when local commands exist, one for validation terminals:
+Do not busy-poll. Missing validation runs beside reviewer work.
+
+When timers are available, arm one whole-set timer for reviewer workers and, only when local commands exist, one for validation terminals:
 
 ```
 timer_fire_when_idle_all(
@@ -215,13 +226,19 @@ timer_fire_when_idle_all(
 )
 ```
 
+Arm timers only after real prompts or validation commands start. If `timer_fire_when_idle_all` returns `already_satisfied`, inspect that barrier immediately because no later wake will occur. `timer_fire_when_idle_any` waits for a new transition and can ignore a process that was already idle when armed.
+
+Without timers, wait for a new user turn or Solo lifecycle event, then perform one batched inspection. State that automatic wake-up is unavailable.
+
 When every command has accepted CI evidence, do not create a validation worktree or terminal and treat the validation process barrier as already complete.
 
 For each idle reviewer, issue `scratchpad_read(mode="headings")`, then section reads for **Finding Index** and **Notes for Other Reviewers**. Read **Issues** only when the index has rows. Complete the lane only when those sections are valid and every indexed issue has one matching detailed issue.
 
+When todos are available, mark a valid lane complete through the live schema and read it back before opening the barrier. Inspect any dependent todo returned or affected by completion, and treat it as actionable only when Solo reports every blocker satisfied. Todo completion is coordination state, not review evidence.
+
 For validation terminals, a failed command is complete evidence. An absent or still-running result keeps the validation barrier closed. After recovery is exhausted, record a terminal `MISSING` result so the barrier can close without inventing PASS. The unified-verdict barrier opens only when every planned lane has a valid review or recorded lane failure and every required command has `PASS`, `FAIL`, or `MISSING` evidence.
 
-Use `timer_fire_when_idle_any` for one laggard and `timer_set` for a plain delay. Never send validation work to a reviewer.
+Use `timer_fire_when_idle_any` for one laggard when timers exist. Use `timer_set` only for a plain delay. Never send validation work to a reviewer.
 
 ### 6. Refinement Round
 
@@ -241,7 +258,7 @@ An index is valid only when it has the template's five columns, uses the allowed
 
 When refinement is required, fetch only the complete indexed findings and routed notes involved. Group all relevant evidence for each affected lane into one amendment prompt. Include matching fingerprints and counterevidence. A Critical finding returns to its originating lane and one appropriate spawned peer when available. Each affected lane receives at most one prompt.
 
-Issue the real `send_input(..., wait_ms=250)` calls for all affected lanes as one parallel tool-call batch. Then arm one barrier for the complete affected set:
+Issue the real `send_input(..., wait_ms=250)` calls for all affected lanes as one parallel tool-call batch. When timers are available, arm one barrier for the complete affected set:
 
 ```
 timer_fire_when_idle_all(
@@ -251,7 +268,7 @@ timer_fire_when_idle_all(
 )
 ```
 
-On wake, inspect all affected workers and collect their updated scratchpads. Dedupe matching fingerprints, withdraw disproved findings, and escalate severity when combined evidence requires it. Do not add a serial prompt, per-lane timer, or second barrier.
+Handle `already_satisfied` immediately. Without timers, inspect the complete affected set once on the next user turn or Solo lifecycle event. Then collect updated scratchpads, dedupe matching fingerprints, withdraw disproved findings, and escalate severity when combined evidence requires it. Do not add a serial prompt, per-lane timer, or second barrier.
 
 **Notes targeting a lane that was not spawned:** do not spawn that lane late. Record the note in the unified verdict at the raising reviewer's severity, tagged as cross-lane and not reviewed by a dedicated lane.
 
@@ -290,24 +307,25 @@ Minor findings remain in the verdict and are never fixed automatically. The sele
 ### 9. Failure & Timeout Handling
 
 - **Lane-context validation failure:** Do not spawn a lane with an incomplete schema or mismatched packet fingerprint. Repair only from the approved immutable packet. A genuinely absent required field marks the lane MISSING. Permit fallback only for one explicitly `externalized` field and exact packet heading. A worker that reads the packet on the normal path, reads broadly, uses a second fallback, queries live metadata, or reconstructs context violates the prompt contract: close it and recover with the identical validated inline context.
-- **Runtime capability or cache failure:** Treat an expired, malformed, unreadable, or rejected cache entry as unavailable. Refresh discovery once, reapply caller choices, and retry affected workers with the identical real first prompts and pinned slices only when the approved harness/model remains unchanged. If discovery changes the selection, return to the combined confirmation. Never fall back to the rejected cache. Cache write failure is non-fatal after successful smoke testing.
-- **Ambiguous slow boot:** The concurrent `wait_ms=250` sends are intentionally short. After one parallel status/output inspection, arm one delayed wake for only the ambiguous workers. Explicit runtime errors fail immediately. Do not add per-worker serial waits.
-- **§1 Scratchpad invalid / done-criteria fail:** `send_input` the specific gap and re-arm, up to a small retry cap (~2). On the cap, close the worker. Any escalation to a stronger model or alternate harness follows the runtime-selection rules: reuse the identical pinned SHAs, lane slice, template, and prompt; if the harness/model differs from the approved plan, return to Step 3 before respawning. If no approved selection can recover the lane, mark its todo failed, record the reason in a scratchpad, and present that lane as MISSING.
-- **Validation runner failure:** A reviewer never inherits validation. Recover one local terminal for the command in the single validation worktree only when prior execution provably did not start. If status is unknown, the command failed, or recovery cannot produce a result, record `MISSING` or the observed failure in `review-<run>-validation`. Never duplicate execution, infer PASS, or assign the command to a lane.
+- **Runtime capability or cache failure:** Treat an expired, malformed, unreadable, or rejected cache entry as unavailable. Without KV, use fresh discovery. Reapply caller choices and retry affected workers with identical real prompts and pinned slices only when the approved harness/model remains unchanged. If discovery changes the selection, return to the combined confirmation.
+- **Coordination mutation failure:** Re-read the current object when supported, retry once with only live-schema parameters, and read back the result. Without readback, preserve the mutation response and mark state unverified. Missing todo, timer, KV, or lock groups use the declared fallback; missing scratchpad capability stops the review.
+- **Ambiguous slow boot:** After one parallel status/output inspection, use one delayed wake only when timers exist. Otherwise wait for the next user turn or lifecycle event. Explicit runtime errors fail immediately.
+- **Lane scratchpad invalid or done-criteria fail:** Send the specific gap, then wait again, up to a small retry cap near two. Before closing or replacing the worker, capture its current lane output, pinned SHAs, exact lane context, and unresolved gap in the run record. Any runtime change requires a new combined confirmation. Exhausted recovery marks the lane MISSING.
+- **Validation runner failure:** A reviewer never inherits validation. Recover one local terminal only when prior execution provably did not start. Unknown, failed, or unrecoverable execution becomes `MISSING` or the observed failure in `review-<run>-validation`.
 - **CI evidence ambiguity:** Any absent mapping, name-only match, missing identity, non-unique run, wrong `head_sha`, merge-ref result, untrusted app, incomplete run, or non-success conclusion fails closed to local validation. Do not refresh or poll the captured CI snapshot.
-- **Validation timeout:** Distinguish a producing terminal from a stuck one. Extend a producing terminal once. Recover a stuck terminal only when the command provably did not start; otherwise preserve the observed status and record `MISSING` or failure.
-- **§2 Worker never goes idle (timeout wake, `running`):** distinguish stuck (no new output) from slow (still producing). Stuck → escalate per §1. Slow → extend `max_wait_ms` once (~2×) and re-arm.
-- **§3 Worker crashes (`exited`/error):** Re-spawn once with the same approved harness/model and identical prompt. A later escalation follows §1 and requires a new combined confirmation if the runtime changes. If recovery fails, mark the todo blocked, raise an alert scratchpad, and stop dispatching that lane.
-- **§4 `gh` failures (auth expired, rate limit, no permissions on a fork):** don't abort — fall back to plain git, but reconstruct **both** pinned SHAs (Scope requires base *and* head). (1) **Base remote:** `origin` is often the contributor's fork while `refs/pull/<n>/head` lives on the *base* repo — match `git remote -v` URLs to the base repo (or the conventional `upstream`) and verify with `git ls-remote --exit-code <base-remote> refs/pull/<n>/head`; if no remote exposes it, halt and ask the user to add the base repo as a remote. (2) **Head:** `git fetch <base-remote> refs/pull/<n>/head`, then capture `head_sha=$(git rev-parse FETCH_HEAD)` immediately (a later fetch overwrites `FETCH_HEAD`). (3) **Target base branch:** `refs/pull/<n>/head` does NOT reveal it and `gh` is down, so require `--base <ref>` (or another authoritative source for the PR's base) — **do not assume the default branch**, a non-default-base PR would be reviewed against the wrong base; if the base cannot be determined, halt and ask, do not proceed. (4) **Base SHA:** `git fetch <base-remote> <base-branch>`, then `base_sha=$(git rev-parse FETCH_HEAD)`. (5) Diff `git diff "$(git merge-base "$base_sha" "$head_sha")...$head_sha"` and read contents via `git show <sha>:<path>`. In the verdict, note that PR metadata (title, description, comments) is unavailable — and, if the base had to be supplied manually, note that too. Auth errors → tell the user to run `gh auth login`; rate limits → back off, don't retry in a loop.
+- **Validation timeout:** Distinguish a producing terminal from a stuck one. Extend a producing terminal once when timers exist. Recover a stuck terminal only when the command provably did not start; otherwise preserve the observed status and record `MISSING` or failure.
+- **Worker timeout:** Distinguish stuck from slow. Capture the lane handoff before escalation. Extend a slow worker once. Recover a stuck worker under the approved runtime and identical lane contract.
+- **Worker crash:** Capture reachable lane state, then re-spawn once with the same approved harness/model and identical prompt. A later runtime escalation requires a new combined confirmation.
+- **GitHub CLI failure:** Fall back to plain git only when both pinned SHAs can be reconstructed. Match a remote to the base repository and verify that it exposes `refs/pull/<n>/head`; otherwise ask the user to add the base remote. Fetch that ref and capture `head_sha` from `FETCH_HEAD` immediately. Require `--base <ref>` or another authoritative base source because the pull ref does not reveal its target branch. Fetch that base, capture `base_sha`, and diff `git merge-base "$base_sha" "$head_sha"` against `head_sha`. Read content through `git show <sha>:<path>`. Report unavailable PR metadata. For authentication errors, stop and ask the user to run `gh auth login`; for rate limits, back off without retrying in a loop.
 - Use exponential backoff on re-arm (double `max_wait_ms`, cap ~10 min) so slow-but-progressing workers don't trigger wake storms.
 
 ### 10. Cleanup
 
-`close_process` every reviewer worker and validation terminal. Remove the single validation worktree only after those terminals stop. Write elapsed durations once to `review-<run>-timings`. Leave the context, validation, timings, and lane scratchpads as the run record; never reuse them, including at the same head SHA.
+Before cleanup, capture every lane handoff and validation marker in the run scratchpads. Require the pinned SHAs, final or partial lane output, unresolved evidence gaps, and recovery state. Read back each record before `close_process`.
 
-## Lock Ordering
+Close every reviewer worker and validation terminal only after its handoff is durable. Cancel timers and reconcile todos when those groups are available. Remove the single validation worktree only after validation terminals stop. Write elapsed durations once to `review-<run>-timings`. Leave context, validation, timings, and lane scratchpads as the immutable run record.
 
-Reviewer workers only read pinned content and write their own scratchpads. They never acquire validation locks. The orchestrator acquires shared resources in this order: review-run coordination lock → validation-worktree lock → repository-declared command-resource lock (stable name order) → orchestrator scratchpad write lock. Release in reverse. Prepare one validation worktree. Parallelize only repository-declared safe command groups; serialize groups that share a resource.
+Reviewer workers only read pinned content and write their own scratchpads. Without locks, serialize every shared scratchpad mutation and validation command group through the orchestrator. With locks, acquire in this order: review-run coordination lock, validation-worktree lock, repository-declared command-resource lock in stable name order, orchestrator scratchpad write lock. Release in reverse.
 
 ## Never
 
@@ -322,7 +340,7 @@ Reviewer workers only read pinned content and write their own scratchpads. They 
 - **NEVER infer, default, or change either confirmation value.** The approved plan and confirmed mode remain separate explicit fields in the same interaction.
 - **NEVER cache authentication, permissions, action modes, repository state, diffs, SHAs, prompts, or worker context.**
 - **NEVER resolve push remotes or inspect worktrees for mutation safety before `auto-fix` is confirmed.** Complete that preflight before reviewer spawn when `auto-fix` is selected.
-- **NEVER spawn or smoke-test reviewers serially.** Create todos, spawn workers, send real first prompts with `wait_ms=250`, and inspect status/output as parallel batches. Use one delayed wake only for ambiguous slow boots.
+- **NEVER spawn or smoke-test reviewers serially.** When available, create todos in parallel. Spawn workers, send real first prompts with `wait_ms=250`, and inspect status/output as parallel batches. Use one delayed wake only for ambiguous slow boots when timers exist.
 - **NEVER derive more than one canonical diff or let a lane reconstruct one.** Every lane slice comes from the pinned canonical diff; use the full canonical diff when a cross-cutting slice would hide interactions.
 - **NEVER spawn an incomplete or unvalidated `lane_context[lane]`, derive it from another source, or let a required field silently disappear.**
 - **NEVER make `review-<run>-context` a routine worker input.** Inline the complete lane context. One explicitly externalized field may permit one exact-section read once; all broader fallback is forbidden.
@@ -338,7 +356,7 @@ Reviewer workers only read pinned content and write their own scratchpads. They 
 - **NEVER store prompts, code, command output, environment values, credentials, or secrets in timings, combine human wait with machine preflight, or include timings in posted review text.**
 - **NEVER use pre-fix evidence as post-fix verification.**
 - **NEVER take the refinement fast path with a missing lane or Critical, malformed, duplicate, cross-lane, or noted finding.**
-- **NEVER dispatch amendment prompts serially or run more than one amendment cycle per lane.** Send one complete prompt per affected lane as a parallel batch, then use one `timer_fire_when_idle_all` barrier.
+- **NEVER dispatch amendment prompts serially or run more than one amendment cycle per lane.** Send one complete prompt per affected lane as a parallel batch, then use one whole-set timer when available or the declared lifecycle-event fallback.
 - **NEVER reuse an earlier run's result solely because its head SHA matches.**
 - **NEVER post review feedback in `summary` or `auto-fix`, and NEVER post `draft-comments` without separate explicit approval.**
 - **NEVER modify code in `summary`, `draft-comments`, or `auto-post`.** In `auto-fix`, reviewer workers remain read-only and the orchestrator alone owns the isolated fix worktree, implementation, validation, commit, and integration.
@@ -349,6 +367,7 @@ Reviewer workers only read pinned content and write their own scratchpads. They 
 - **NEVER use an unleased force push, weaken the expected old value, rebase onto a moved head, or overwrite a moved branch.**
 - **NEVER use `git update-ref` on a branch checked out in another worktree.** Check `git worktree list --porcelain` immediately before the local compare-and-swap.
 - **NEVER skip `close_process` cleanup.** Orphaned workers consume resources.
+- **NEVER use parameters absent from the live Solo schema, infer successful persistence without supported readback, or discard a worker before its lane handoff is captured.**
 - **NEVER post to GitHub unless `auto-post` was confirmed in the combined form or the user explicitly approved the exact `draft-comments` text.**
 
 ### Reviewer (per worker)
@@ -365,6 +384,6 @@ Reviewer workers only read pinned content and write their own scratchpads. They 
 
 ### Worker mechanics
 - **NEVER assume a harness takes Omp's model flag, silently ignore a requested model, or switch runtime after approval.** Model passing follows Prerequisites; a changed harness/model requires a new combined confirmation before spawn.
-- **NEVER trust spawn acceptance as readiness.** Send the real reviewer prompt as the smoke test with `wait_ms=250`, then inspect all worker statuses and outputs once in parallel. Use one delayed wake only for ambiguous slow boots; explicit runtime errors use the one-refresh fallback.
+- **NEVER trust spawn acceptance as readiness.** Send the real reviewer prompt as the smoke test with `wait_ms=250`, then inspect all worker statuses and outputs once in parallel. Use one delayed wake only for ambiguous slow boots when timers exist; explicit runtime errors use the one-refresh fallback.
 - **NEVER send a bare prompt** — prepend `agent_instructions` so the worker has its Solo process/project context.
-- **NEVER busy-poll process output** — wake on `timer_fire_when_idle_all/any`.
+- **NEVER busy-poll process output** — use idle-fire timers when available; otherwise inspect once on a new user turn or Solo lifecycle event.
