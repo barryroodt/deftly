@@ -42,13 +42,15 @@ Worker concurrency and check concurrency are separate. `maxWorkers` limits runni
 
 `start` pins a SHA-256 fingerprint of the node's gate contract through `gate-check.mjs --contract-hash`. The pin covers gate IDs, titles, `CHECK`, and `EXPECT`. Checkbox state, `EVIDENCE` updates, and `ABANDON` entries are runtime outcomes and stay outside it, so a worker can still report impossibility and strict verification returns its distinct terminal result.
 
-`plan.mjs verify` recomputes the fingerprint and refuses a mismatch before running anything. A worker therefore cannot weaken its own gates between dispatch and verification. After reviewing a legitimate amendment, the parent re-pins with `plan.mjs regate` and only then verifies. `verify` reads the node's declared gate file and invokes:
+`plan.mjs verify` recomputes the fingerprint and refuses a mismatch before running anything, so contract drift between dispatch and verification is detected instead of silently blessed. After reviewing a legitimate amendment, the parent re-pins with `plan.mjs regate` and only then verifies. `verify` reads the node's declared gate file and invokes:
 
 ```bash
 gate-check.mjs --verify --strict <gate-file>
 ```
 
 A zero exit changes the node to `verified`. Any other result leaves it in `awaiting-verification`. For correctable work, run `plan.mjs retry` before redispatch so the node returns to `running` and consumes capacity. `retry` counts attempts in the ledger; retry at most twice per approach, then change the approach or record a terminal non-success state.
+
+The pin is drift detection, not an authorization boundary. It holds only under the single-writer discipline: the parent alone invokes `plan.mjs` and owns the state file. A process that can run `regate` or write `.proof-of-life/state.json` can bypass the pin, so give workers only their gate file and owned paths, never the state file or scheduler.
 
 ## Failure isolation
 

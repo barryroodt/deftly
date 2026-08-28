@@ -365,7 +365,7 @@ async function main() {
     const leaf = validated.byId.get(leafArg);
     const currentHash = gateContractHash(planPath, leaf.gates);
     if (record.gateHash && record.gateHash !== currentHash) {
-      fail(`gate contract for ${leafArg} changed since dispatch; review the change, then re-pin with: plan.mjs regate ${leafArg}`);
+      fail(`gate contract for ${leafArg} changed since dispatch; review the change, then re-pin with: plan.mjs regate ${planArg} ${leafArg}`);
     }
     if (!record.gateHash) {
       console.error(`plan: node ${leafArg} has no pinned gate contract; pinning the current contract`);

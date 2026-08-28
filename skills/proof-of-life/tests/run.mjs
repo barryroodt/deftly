@@ -208,7 +208,7 @@ function suitePlan() {
       result = run(planScript, ["verify", "PLAN.json", "a"], tamperDir);
       assert.equal(result.status, 2);
       assert.match(result.stderr, /changed since dispatch/);
-      assert.match(result.stderr, /regate a/);
+      assert.match(result.stderr, /regate PLAN\.json a/);
       assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], tamperDir).stdout).nodes.a.state, "awaiting-verification");
       assert.equal(run(planScript, ["regate", "PLAN.json", "a"], tamperDir).status, 0);
       assert.equal(run(planScript, ["verify", "PLAN.json", "a"], tamperDir).status, 0);
