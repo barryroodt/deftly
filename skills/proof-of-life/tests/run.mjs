@@ -216,6 +216,22 @@ function suitePlan() {
       rmSync(tamperDir, { recursive: true, force: true });
     }
 
+    const abandonDir = temp("abandon");
+    try {
+      writePlan(abandonDir, singleLeafPlan());
+      assert.equal(run(planScript, ["start", "PLAN.json", "a"], abandonDir).status, 0);
+      const abandonGate = join(abandonDir, "gates", "a.md");
+      write(abandonGate, `${readFileSync(abandonGate, "utf8")}\nABANDON: G1 upstream unavailable\n`);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], abandonDir).status, 0);
+      result = run(planScript, ["verify", "PLAN.json", "a"], abandonDir);
+      assert.equal(result.status, 3, result.stderr);
+      assert.match(result.stdout, /TERMINAL HANDOVER/);
+      assert.equal(run(planScript, ["abandon", "PLAN.json", "a", "--reason", "upstream unavailable"], abandonDir).status, 0);
+      assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], abandonDir).stdout).nodes.root.blockedBy, "a");
+    } finally {
+      rmSync(abandonDir, { recursive: true, force: true });
+    }
+
     for (const [label, mutate, expected] of [
       ["cycle", (value) => { value.nodes[0].needs = ["root"]; }, /dependency cycle/],
       ["ownership", (value) => { value.nodes[1].owns = ["file:src/a.ts/generated"]; }, /ownership conflict/],
@@ -302,6 +318,10 @@ ABANDON: G1 upstream unavailable
     assert.match(hashes[0], /^[0-9a-f]{64}$/);
     assert.equal(hashes[0], hashes[1]);
     assert.notEqual(hashes[1], hashes[2]);
+    write(join(dir, "contract.md"), `${readFileSync(join(dir, "contract.md"), "utf8")}\nABANDON: G1 upstream unavailable\n`);
+    result = run(gateScript, ["--contract-hash", "contract.md"], dir);
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim().split(/\s+/)[0], hashes[2]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

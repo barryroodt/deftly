@@ -40,7 +40,7 @@ Worker concurrency and check concurrency are separate. `maxWorkers` limits runni
 
 ## Exact parent verification
 
-`start` pins a SHA-256 fingerprint of the node's gate contract through `gate-check.mjs --contract-hash`. The pin covers gate IDs, titles, `CHECK`, `EXPECT`, and `ABANDON` entries. Checkbox and `EVIDENCE` updates from gate runs stay outside it.
+`start` pins a SHA-256 fingerprint of the node's gate contract through `gate-check.mjs --contract-hash`. The pin covers gate IDs, titles, `CHECK`, and `EXPECT`. Checkbox state, `EVIDENCE` updates, and `ABANDON` entries are runtime outcomes and stay outside it, so a worker can still report impossibility and strict verification returns its distinct terminal result.
 
 `plan.mjs verify` recomputes the fingerprint and refuses a mismatch before running anything. A worker therefore cannot weaken its own gates between dispatch and verification. After reviewing a legitimate amendment, the parent re-pins with `plan.mjs regate` and only then verifies. `verify` reads the node's declared gate file and invokes:
 
@@ -74,7 +74,7 @@ Send only:
 - the leaf entry from `PLAN.json`
 - the leaf gate file
 - the instruction to stay within `Owns`
-- the instruction to treat gate lines, `CHECK`, `EXPECT`, and `ABANDON` entries as read-only; gate runs write checkboxes and evidence
+- the instruction to treat gate lines, `CHECK`, and `EXPECT` as read-only; gate runs write checkboxes and evidence, and `ABANDON: <gate-id> <reason>` is the one legitimate worker-written report of impossibility
 - the command that runs its local gates
 
 Do not send the parent's transcript or unrelated worker output.

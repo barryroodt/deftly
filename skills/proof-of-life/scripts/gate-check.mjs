@@ -108,14 +108,12 @@ function parseGateFile(path) {
   return { path, lines, gates, abandoned, changed: false };
 }
 
-// The contract covers what a gate requires: identity, title, CHECK, EXPECT,
-// and abandonment. Checkbox state and EVIDENCE lines are runtime results and
-// stay outside the hash.
+// The contract covers what a gate requires: identity, title, CHECK, and
+// EXPECT. Checkbox state, EVIDENCE lines, and ABANDON entries are runtime
+// outcomes and stay outside the hash; strict verification already turns
+// abandonment into a distinct terminal result.
 function contractHash(file) {
-  const contract = {
-    gates: file.gates.map((gate) => ({ id: gate.id, title: gate.title, check: gate.check, expect: gate.expect })),
-    abandoned: [...file.abandoned.keys()].sort(),
-  };
+  const contract = file.gates.map((gate) => ({ id: gate.id, title: gate.title, check: gate.check, expect: gate.expect }));
   return createHash("sha256").update(JSON.stringify(contract)).digest("hex");
 }
 

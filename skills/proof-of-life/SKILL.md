@@ -116,7 +116,7 @@ The parent is the sole state writer. State defaults to `.proof-of-life/state.jso
    node <skill-dir>/scripts/plan.mjs start PLAN.json <node-id>
    ```
 
-   `start` pins a fingerprint of the node's gate contract: gate IDs, titles, `CHECK`, `EXPECT`, and `ABANDON` entries. Checkbox and `EVIDENCE` updates from gate runs stay outside the pin.
+   `start` pins a fingerprint of the node's gate contract: gate IDs, titles, `CHECK`, and `EXPECT`. Checkbox state, `EVIDENCE` updates, and `ABANDON` entries are runtime outcomes and stay outside the pin.
 
 3. For a leaf, give the worker only the stable contract, its plan entry, and its gate file. For an integration node, the parent can run the gates directly or dispatch a strong integration worker.
 

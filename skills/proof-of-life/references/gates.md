@@ -44,7 +44,7 @@ ABANDON: G2 external system is unavailable
 
 Equal `CHECK` strings share one execution during a checker run. Each gate still evaluates its own `EXPECT`.
 
-The contract fingerprint covers gate IDs, titles, `CHECK`, `EXPECT`, and `ABANDON` entries. Checkbox state and `EVIDENCE` lines are runtime results and stay outside the fingerprint, so ordinary gate runs never change it.
+The contract fingerprint covers gate IDs, titles, `CHECK`, and `EXPECT`. Checkbox state, `EVIDENCE` lines, and `ABANDON` entries are runtime outcomes and stay outside the fingerprint. Gate runs and honest abandonment reports never change it; strict verification already turns abandonment into a distinct terminal result.
 
 ## Exit codes
 
