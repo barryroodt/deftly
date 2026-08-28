@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Proof of Life plan validator and bounded rolling scheduler.
-// Original Proof of Life work. Apache-2.0.
+// Show Your Work plan validator and bounded rolling scheduler.
+// Original Show Your Work work. Apache-2.0.
 
 import {
   existsSync,
@@ -256,7 +256,7 @@ function propagateBlocked(plan, state) {
 }
 
 function parseOptions(args, planPath) {
-  let statePath = join(dirname(planPath), ".proof-of-life", "state.json");
+  let statePath = join(dirname(planPath), ".show-your-work", "state.json");
   let maxWorkers = null;
   let reason = null;
   for (let i = 0; i < args.length; i += 1) {

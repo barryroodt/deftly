@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Proof of Life behavioral fixtures. Original work under Apache-2.0.
+// Show Your Work behavioral fixtures. Original work under Apache-2.0.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -83,12 +83,12 @@ function singleLeafPlan() {
 }
 
 function temp(name) {
-  return mkdtempSync(join(tmpdir(), `proof-of-life-${name}-`));
+  return mkdtempSync(join(tmpdir(), `show-your-work-${name}-`));
 }
 
 function suiteSkill() {
   const skill = readFileSync(join(skillDir, "SKILL.md"), "utf8");
-  assert.match(skill, /^name: proof-of-life$/m);
+  assert.match(skill, /^name: show-your-work$/m);
   assert.match(skill, /Leonxlnx\/unlazy/);
   assert.match(skill, /root integration node/);
   assert.match(skill, /plan\.mjs retry/);
@@ -387,7 +387,7 @@ function suiteHook() {
     const settingsPath = join(installerDir, ".claude", "settings.json");
     const first = readFileSync(settingsPath, "utf8");
     const settings = JSON.parse(first);
-    assert.match(settings.hooks.Stop[0].hooks[0].command, /proof-of-life.*stop-hook\.mjs/);
+    assert.match(settings.hooks.Stop[0].hooks[0].command, /show-your-work.*stop-hook\.mjs/);
     result = run(installerScript, ["--shared"], installerDir);
     assert.equal(result.status, 0);
     assert.equal(readFileSync(settingsPath, "utf8"), first);
@@ -407,7 +407,7 @@ function suiteAttribution() {
   assert.match(attribution, /Leonxlnx\/unlazy/);
   assert.match(attribution, /ed9e8d2b5919698cf2c54bda270d507e10b69617/);
   assert.match(attribution, /Inherited concepts/);
-  assert.match(attribution, /Proof of Life changes/);
+  assert.match(attribution, /Show Your Work changes/);
   assert.match(license, /MIT License/);
   assert.match(license, /Copyright \(c\) 2026 Leonxlnx/);
   for (const file of ["gate-check.mjs", "stop-hook.mjs", "install-hooks.mjs"]) {
@@ -421,7 +421,7 @@ function suiteAttribution() {
 function suiteRepository() {
   const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
   const marketplace = JSON.parse(readFileSync(join(repoRoot, ".claude-plugin", "marketplace.json"), "utf8"));
-  assert.match(readme, /\[`proof-of-life`\]\(\.\/skills\/proof-of-life\/\)/);
+  assert.match(readme, /\[`show-your-work`\]\(\.\/skills\/show-your-work\/\)/);
   assert.match(readme, /Inspired by Leonxlnx\/unlazy/);
   assert.equal(marketplace.plugins[0].skills, "./skills");
   console.log("PASS repository integration");

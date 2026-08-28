@@ -39,4 +39,4 @@ Every direct terminal outcome requires a reason. Propagated blocked descendants 
 
 ## Restart
 
-After an external condition changes, the parent can create a new run state from the same validated plan. It may seed previously verified node states only after re-validating their evidence against the unchanged contract. Proof of Life does not silently reopen terminal states inside one run.
+After an external condition changes, the parent can create a new run state from the same validated plan. It may seed previously verified node states only after re-validating their evidence against the unchanged contract. Show Your Work does not silently reopen terminal states inside one run.

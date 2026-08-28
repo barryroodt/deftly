@@ -1,6 +1,6 @@
 # Attribution
 
-Proof of Life is inspired by and adapted from [unlazy v2](https://github.com/Leonxlnx/unlazy) by [Leonxlnx](https://github.com/Leonxlnx).
+Show Your Work is inspired by and adapted from [unlazy v2](https://github.com/Leonxlnx/unlazy) by [Leonxlnx](https://github.com/Leonxlnx).
 
 Upstream revision used for this adaptation:
 
@@ -12,7 +12,7 @@ Unlazy is distributed under the MIT License. Its license and copyright notice ar
 
 ## Inherited concepts
 
-Proof of Life credits unlazy for these ideas:
+Show Your Work credits unlazy for these ideas:
 
 - The Depth Tree as a decomposition method.
 - Acceptance gates stored in files before work begins.
@@ -24,9 +24,9 @@ Proof of Life credits unlazy for these ideas:
 - Measured final reports backed by a ledger.
 - Visible abandonment instead of silent scope reduction.
 
-## Proof of Life changes
+## Show Your Work changes
 
-Proof of Life adds or materially changes:
+Show Your Work adds or materially changes:
 
 - A machine-readable `PLAN.json` as scheduling truth.
 - Deterministic dependency and ownership preflight.
@@ -53,7 +53,7 @@ These files preserve unlazy structure or implementation ideas and remain covered
 - `scripts/stop-hook.mjs`
 - `scripts/install-hooks.mjs`
 
-The following files are original Proof of Life work:
+The following files are original Show Your Work work:
 
 - `references/plan-format.md`
 - `references/outcome-states.md`
@@ -61,4 +61,4 @@ The following files are original Proof of Life work:
 - `scripts/plan.mjs`
 - `tests/run.mjs`
 
-The repository's Apache-2.0 license applies to original Proof of Life work. The preserved MIT terms apply to adapted unlazy material.
+The repository's Apache-2.0 license applies to original Show Your Work work. The preserved MIT terms apply to adapted unlazy material.

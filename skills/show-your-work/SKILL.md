@@ -1,6 +1,6 @@
 ---
-name: proof-of-life
-description: Proof-backed completion discipline for substantial work and multi-agent builds. Use when work must finish against runnable gates, when independent leaves should run through bounded rolling dispatch, or when blocked work needs an honest restart-ready handover. Triggers on /proof-of-life, prove it is done, completion gates, rolling dispatch, dependency plan, and do not stop half-finished.
+name: show-your-work
+description: Proof-backed completion discipline for substantial work and multi-agent builds. Use when work must finish against runnable gates, when independent leaves should run through bounded rolling dispatch, or when blocked work needs an honest restart-ready handover. Triggers on /show-your-work, prove it is done, completion gates, rolling dispatch, dependency plan, and do not stop half-finished.
 license: Apache-2.0 with adapted MIT material; see ATTRIBUTION.md and LICENSE.unlazy
 metadata:
   author: Barry Roodt
@@ -9,9 +9,9 @@ metadata:
   upstream-revision: ed9e8d2b5919698cf2c54bda270d507e10b69617
 ---
 
-# Proof of Life
+# Show Your Work
 
-Proof of Life makes incomplete work structurally visible. A completion claim requires runnable gates, fresh evidence, and parent verification. Larger builds use a machine-checked dependency plan and bounded rolling dispatch.
+Show Your Work makes incomplete work structurally visible. A completion claim requires runnable gates, fresh evidence, and parent verification. Larger builds use a machine-checked dependency plan and bounded rolling dispatch.
 
 This skill is inspired by and adapted from [unlazy v2](https://github.com/Leonxlnx/unlazy) by Leonxlnx. Read [ATTRIBUTION.md](ATTRIBUTION.md) for inherited concepts, original changes, and license details.
 
@@ -102,7 +102,7 @@ File ownership defaults to the complete file or directory tree. Parent and desce
 
 ## Rolling driver loop
 
-The parent is the sole state writer. State defaults to `.proof-of-life/state.json`.
+The parent is the sole state writer. State defaults to `.show-your-work/state.json`.
 
 1. Ask for the next bounded batch:
 

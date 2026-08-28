@@ -1,6 +1,6 @@
 # PLAN.json format
 
-`PLAN.json` is the canonical scheduling input. It contains declarations only. Runtime state belongs in `.proof-of-life/state.json`.
+`PLAN.json` is the canonical scheduling input. It contains declarations only. Runtime state belongs in `.show-your-work/state.json`.
 
 ## Schema
 

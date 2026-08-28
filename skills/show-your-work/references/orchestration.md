@@ -1,6 +1,6 @@
 # Orchestrated mode
 
-Proof of Life adapts unlazy v2's fresh-leaf and parent-verification model. It replaces lockstep dispatch with a bounded rolling dependency scheduler.
+Show Your Work adapts unlazy v2's fresh-leaf and parent-verification model. It replaces lockstep dispatch with a bounded rolling dependency scheduler.
 
 ## Authority split
 
@@ -50,7 +50,7 @@ gate-check.mjs --verify --strict <gate-file>
 
 A zero exit changes the node to `verified`. Any other result leaves it in `awaiting-verification`. For correctable work, run `plan.mjs retry` before redispatch so the node returns to `running` and consumes capacity. `retry` keeps a cumulative per-node count in the ledger; it never resets and never blocks. The scheduler warns from a node's third retry. Treat repeated failures as the signal to change the approach or record a terminal non-success state.
 
-The pin is drift detection, not an authorization boundary. It holds only under the single-writer discipline: the parent alone invokes `plan.mjs` and owns the state file. A process that can run `regate` or write `.proof-of-life/state.json` can bypass the pin, so give workers only their gate file and owned paths, never the state file or scheduler.
+The pin is drift detection, not an authorization boundary. It holds only under the single-writer discipline: the parent alone invokes `plan.mjs` and owns the state file. A process that can run `regate` or write `.show-your-work/state.json` can bypass the pin, so give workers only their gate file and owned paths, never the state file or scheduler.
 
 ## Failure isolation
 
