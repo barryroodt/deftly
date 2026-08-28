@@ -4,6 +4,7 @@
 // MIT License preserved in ../LICENSE.unlazy.
 
 import { exec } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -13,17 +14,18 @@ const ABANDON_RE = /^ABANDON:\s*(\S+)\s*(.*)$/;
 
 function usage(message) {
   if (message) console.error(`gate-check: ${message}`);
-  console.error("Usage: gate-check.mjs [--status|--verify] [--strict] [--jobs N] [--timeout N] [file ...]");
+  console.error("Usage: gate-check.mjs [--status|--verify|--contract-hash] [--strict] [--jobs N] [--timeout N] [file ...]");
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const options = { status: false, verify: false, strict: false, jobs: 1, timeout: 120, files: [] };
+  const options = { status: false, verify: false, contract: false, strict: false, jobs: 1, timeout: 120, files: [] };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--status") options.status = true;
     else if (arg === "--verify") options.verify = true;
     else if (arg === "--strict") options.strict = true;
+    else if (arg === "--contract-hash") options.contract = true;
     else if (arg === "--jobs") {
       options.jobs = Number(argv[++i]);
       if (!Number.isInteger(options.jobs) || options.jobs < 1) usage("--jobs requires a positive integer");
@@ -34,6 +36,7 @@ function parseArgs(argv) {
     else options.files.push(resolve(process.cwd(), arg));
   }
   if (options.status && options.verify) usage("--status and --verify are mutually exclusive");
+  if (options.contract && (options.status || options.verify)) usage("--contract-hash excludes --status and --verify");
   return options;
 }
 
@@ -103,6 +106,17 @@ function parseGateFile(path) {
   }
 
   return { path, lines, gates, abandoned, changed: false };
+}
+
+// The contract covers what a gate requires: identity, title, CHECK, EXPECT,
+// and abandonment. Checkbox state and EVIDENCE lines are runtime results and
+// stay outside the hash.
+function contractHash(file) {
+  const contract = {
+    gates: file.gates.map((gate) => ({ id: gate.id, title: gate.title, check: gate.check, expect: gate.expect })),
+    abandoned: [...file.abandoned.keys()].sort(),
+  };
+  return createHash("sha256").update(JSON.stringify(contract)).digest("hex");
 }
 
 function expectMatches(expect, output) {
@@ -193,6 +207,11 @@ async function main() {
   } catch (error) {
     console.error(`gate-check: ${error.message}`);
     return 2;
+  }
+
+  if (options.contract) {
+    for (const file of files) console.log(`${contractHash(file)}  ${file.path}`);
+    return 0;
   }
 
   const commands = [];

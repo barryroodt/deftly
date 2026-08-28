@@ -39,6 +39,7 @@ Skip this skill for conversational replies, factual questions, trivial edits, or
 6. `abandoned` and `blocked` permit handover, never successful completion.
 7. Continue dispatching reachable work after an unrelated failure.
 8. Report only facts present in the plan state and gate evidence.
+9. A dispatched gate contract stays pinned until the parent reviews the change and re-pins it.
 
 ## Pick a mode
 
@@ -115,6 +116,8 @@ The parent is the sole state writer. State defaults to `.proof-of-life/state.jso
    node <skill-dir>/scripts/plan.mjs start PLAN.json <node-id>
    ```
 
+   `start` pins a fingerprint of the node's gate contract: gate IDs, titles, `CHECK`, `EXPECT`, and `ABANDON` entries. Checkbox and `EVIDENCE` updates from gate runs stay outside the pin.
+
 3. For a leaf, give the worker only the stable contract, its plan entry, and its gate file. For an integration node, the parent can run the gates directly or dispatch a strong integration worker.
 
 4. When execution returns, record the return:
@@ -129,15 +132,21 @@ The parent is the sole state writer. State defaults to `.proof-of-life/state.jso
    node <skill-dir>/scripts/plan.mjs verify PLAN.json <node-id>
    ```
 
+   `verify` recomputes the contract fingerprint first and refuses a mismatch without touching node state. Review the amendment, then re-pin deliberately:
+
+   ```bash
+   node <skill-dir>/scripts/plan.mjs regate PLAN.json <node-id>
+   ```
+
    If verification fails and the node remains correctable, reserve capacity before redispatch:
 
    ```bash
    node <skill-dir>/scripts/plan.mjs retry PLAN.json <node-id>
    ```
 
-   Send the executor the exact failed gates. `retry` moves `awaiting-verification` back to `running`.
+   Send the executor the exact failed gates. `retry` moves `awaiting-verification` back to `running` and counts the attempt in the ledger. Retry at most twice per approach; from the third retry the scheduler warns. Change the approach or record a terminal outcome instead.
 
-6. A verified node unlocks its dependents. Fill the free slot immediately. Do not wait for an unrelated active node.
+6. A verified node unlocks its dependents. Fill every free slot from the new `ready` set immediately. Do not wait for an unrelated active node. Release a persistent worker once its node verifies and no next assignment exists. A reused worker gets the full fresh brief for its next node.
 
 7. Record non-success outcomes with a reason:
 

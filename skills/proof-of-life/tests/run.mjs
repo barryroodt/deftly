@@ -157,6 +157,15 @@ function suitePlan() {
       assert.equal(run(planScript, ["retry", "PLAN.json", "a"], retryDir).status, 0);
       result = run(planScript, ["status", "PLAN.json"], retryDir);
       assert.equal(JSON.parse(result.stdout).nodes.a.state, "running");
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], retryDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], retryDir).status, 1);
+      assert.equal(run(planScript, ["retry", "PLAN.json", "a"], retryDir).status, 0);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], retryDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], retryDir).status, 1);
+      result = run(planScript, ["retry", "PLAN.json", "a"], retryDir);
+      assert.equal(result.status, 0);
+      assert.match(result.stderr, /retry 3/);
+      assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], retryDir).stdout).nodes.a.retries, 3);
     } finally {
       rmSync(retryDir, { recursive: true, force: true });
     }
@@ -175,6 +184,36 @@ function suitePlan() {
       assert.equal(JSON.parse(result.stdout).nodes.root.blockedBy, "a");
     } finally {
       rmSync(blockedDir, { recursive: true, force: true });
+    }
+
+    const pinnedDir = temp("pinned");
+    try {
+      writePlan(pinnedDir, singleLeafPlan());
+      assert.equal(run(planScript, ["start", "PLAN.json", "a"], pinnedDir).status, 0);
+      result = run(planScript, ["status", "PLAN.json"], pinnedDir);
+      assert.match(JSON.parse(result.stdout).nodes.a.gateHash, /^[0-9a-f]{64}$/);
+      assert.equal(run(gateScript, ["gates/a.md"], pinnedDir).status, 0);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], pinnedDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], pinnedDir).status, 0);
+    } finally {
+      rmSync(pinnedDir, { recursive: true, force: true });
+    }
+
+    const tamperDir = temp("tamper");
+    try {
+      writePlan(tamperDir, singleLeafPlan());
+      assert.equal(run(planScript, ["start", "PLAN.json", "a"], tamperDir).status, 0);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], tamperDir).status, 0);
+      write(join(tamperDir, "gates", "a.md"), gate(`node -e "console.log('ok2')"`, "ok2"));
+      result = run(planScript, ["verify", "PLAN.json", "a"], tamperDir);
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, /changed since dispatch/);
+      assert.match(result.stderr, /regate a/);
+      assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], tamperDir).stdout).nodes.a.state, "awaiting-verification");
+      assert.equal(run(planScript, ["regate", "PLAN.json", "a"], tamperDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], tamperDir).status, 0);
+    } finally {
+      rmSync(tamperDir, { recursive: true, force: true });
     }
 
     for (const [label, mutate, expected] of [
@@ -249,6 +288,20 @@ ABANDON: G1 upstream unavailable
 `);
     assert.equal(run(gateScript, ["abandoned.md"], dir).status, 0);
     assert.equal(run(gateScript, ["--strict", "abandoned.md"], dir).status, 3);
+
+    write(join(dir, "contract.md"), gate());
+    const hashRuns = [run(gateScript, ["--contract-hash", "contract.md"], dir)];
+    assert.equal(run(gateScript, ["contract.md"], dir).status, 0);
+    hashRuns.push(run(gateScript, ["--contract-hash", "contract.md"], dir));
+    write(join(dir, "contract.md"), gate(`node -e "console.log('ok2')"`, "ok2"));
+    hashRuns.push(run(gateScript, ["--contract-hash", "contract.md"], dir));
+    const hashes = hashRuns.map((entry) => {
+      assert.equal(entry.status, 0, entry.stderr);
+      return entry.stdout.trim().split(/\s+/)[0];
+    });
+    assert.match(hashes[0], /^[0-9a-f]{64}$/);
+    assert.equal(hashes[0], hashes[1]);
+    assert.notEqual(hashes[1], hashes[2]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

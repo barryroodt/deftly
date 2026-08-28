@@ -73,13 +73,17 @@ The state file contains a record for each node:
     "contract": {
       "state": "pending",
       "reason": null,
-      "blockedBy": null
+      "blockedBy": null,
+      "gateHash": null,
+      "retries": 0
     }
   }
 }
 ```
 
 The parent is the only writer. Mutations use an atomic temporary-file rename. A plan hash mismatch invalidates stale state.
+
+`gateHash` is the gate contract fingerprint pinned by `start` and re-pinned only by `regate`. `verify` refuses a node whose current contract differs from the pin. `retries` counts `retry` transitions; from the third retry the scheduler warns on standard error. State files written before these fields existed stay valid: a missing pin is warned about and pinned at the next `verify`, and a missing counter reads as zero.
 
 ## Readiness
 

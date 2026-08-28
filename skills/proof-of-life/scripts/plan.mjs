@@ -167,6 +167,21 @@ export function validatePlan(plan, planPath, { requireGates = true } = {}) {
   return { byId, hash: planHash(plan) };
 }
 
+function gateContractHash(planPath, gatesPath) {
+  const checker = join(dirname(fileURLToPath(import.meta.url)), "gate-check.mjs");
+  const target = resolve(dirname(planPath), gatesPath);
+  const result = spawnSync(process.execPath, [checker, "--contract-hash", target], {
+    cwd: dirname(planPath),
+    encoding: "utf8",
+  });
+  if (result.error) fail(`cannot fingerprint gate file ${gatesPath}: ${result.error.message}`);
+  const hash = result.status === 0 ? (result.stdout.trim().split(/\s+/)[0] || "") : "";
+  if (!/^[0-9a-f]{64}$/.test(hash)) {
+    fail(`cannot fingerprint gate contract ${gatesPath}: ${(result.stderr || result.stdout || "").trim() || "no output"}`);
+  }
+  return hash;
+}
+
 function newState(plan, hash) {
   return {
     version: 1,
@@ -175,7 +190,7 @@ function newState(plan, hash) {
     nodes: Object.fromEntries(
       [...plan.nodes]
         .sort((a, b) => a.id.localeCompare(b.id))
-        .map((node) => [node.id, { state: "pending", reason: null, blockedBy: null }]),
+        .map((node) => [node.id, { state: "pending", reason: null, blockedBy: null, gateHash: null, retries: 0 }]),
     ),
   };
 }
@@ -282,7 +297,7 @@ function usage() {
   console.error(`Usage:
   plan.mjs check <PLAN.json>
   plan.mjs ready|status <PLAN.json> [--state <path>] [--max-workers N]
-  plan.mjs start|return|retry|verify <PLAN.json> <node-id> [--state <path>] [--max-workers N]
+  plan.mjs start|return|retry|verify|regate <PLAN.json> <node-id> [--state <path>] [--max-workers N]
   plan.mjs fail|abandon|block <PLAN.json> <node-id> --reason <text> [--state <path>]`);
   process.exit(2);
 }
@@ -300,7 +315,7 @@ async function main() {
     return 0;
   }
 
-  const hasLeaf = ["start", "return", "retry", "verify", "fail", "abandon", "block"].includes(command);
+  const hasLeaf = ["start", "return", "retry", "verify", "regate", "fail", "abandon", "block"].includes(command);
   if (hasLeaf && !leafArg) fail(`${command} requires a node ID`);
   if (!hasLeaf && leafArg?.startsWith("--")) optionArgs.unshift(leafArg);
   else if (!hasLeaf && leafArg) fail(`${command} does not accept a node ID`);
@@ -330,6 +345,7 @@ async function main() {
     if (!readyIds(plan, state).includes(leafArg)) fail(`node ${leafArg} is not ready`, 1);
     if (runningCount(state) >= limit) fail(`worker capacity ${limit} is full`, 1);
     record.state = "running";
+    record.gateHash = gateContractHash(planPath, validated.byId.get(leafArg).gates);
   } else if (command === "return") {
     if (record.state !== "running") fail(`node ${leafArg} cannot return from ${record.state}`);
     record.state = "awaiting-verification";
@@ -337,9 +353,24 @@ async function main() {
     if (record.state !== "awaiting-verification") fail(`node ${leafArg} cannot retry from ${record.state}`);
     if (runningCount(state) >= limit) fail(`worker capacity ${limit} is full`, 1);
     record.state = "running";
+    record.retries = (record.retries ?? 0) + 1;
+    if (record.retries >= 3) {
+      console.error(`plan: node ${leafArg} retry ${record.retries}; retry twice at most, then change the approach or record fail, abandon, or block`);
+    }
+  } else if (command === "regate") {
+    if (!["running", "awaiting-verification"].includes(record.state)) fail(`node ${leafArg} cannot regate from ${record.state}`);
+    record.gateHash = gateContractHash(planPath, validated.byId.get(leafArg).gates);
   } else if (command === "verify") {
     if (record.state !== "awaiting-verification") fail(`node ${leafArg} cannot verify from ${record.state}`);
     const leaf = validated.byId.get(leafArg);
+    const currentHash = gateContractHash(planPath, leaf.gates);
+    if (record.gateHash && record.gateHash !== currentHash) {
+      fail(`gate contract for ${leafArg} changed since dispatch; review the change, then re-pin with: plan.mjs regate ${leafArg}`);
+    }
+    if (!record.gateHash) {
+      console.error(`plan: node ${leafArg} has no pinned gate contract; pinning the current contract`);
+      record.gateHash = currentHash;
+    }
     const checker = join(dirname(fileURLToPath(import.meta.url)), "gate-check.mjs");
     const gatePath = resolve(dirname(planPath), leaf.gates);
     const result = spawnSync(process.execPath, [checker, "--verify", "--strict", gatePath], {
