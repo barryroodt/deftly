@@ -144,7 +144,7 @@ The parent is the sole state writer. State defaults to `.proof-of-life/state.jso
    node <skill-dir>/scripts/plan.mjs retry PLAN.json <node-id>
    ```
 
-   Send the executor the exact failed gates. `retry` moves `awaiting-verification` back to `running` and counts the attempt in the ledger. Retry at most twice per approach; from the third retry the scheduler warns. Change the approach or record a terminal outcome instead.
+   Send the executor the exact failed gates. `retry` moves `awaiting-verification` back to `running` and adds to the node's cumulative `retries` count. The scheduler never blocks a retry; it warns from a node's third. Treat that warning as the signal to change the approach or record a terminal outcome.
 
 6. A verified node unlocks its dependents. Fill every free slot from the new `ready` set immediately. Do not wait for an unrelated active node. Release a persistent worker once its node verifies and no next assignment exists. A reused worker gets the full fresh brief for its next node.
 

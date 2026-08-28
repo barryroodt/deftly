@@ -164,7 +164,7 @@ function suitePlan() {
       assert.equal(run(planScript, ["verify", "PLAN.json", "a"], retryDir).status, 1);
       result = run(planScript, ["retry", "PLAN.json", "a"], retryDir);
       assert.equal(result.status, 0);
-      assert.match(result.stderr, /retry 3/);
+      assert.match(result.stderr, /3 cumulative retries/);
       assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], retryDir).stdout).nodes.a.retries, 3);
     } finally {
       rmSync(retryDir, { recursive: true, force: true });

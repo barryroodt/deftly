@@ -355,7 +355,7 @@ async function main() {
     record.state = "running";
     record.retries = (record.retries ?? 0) + 1;
     if (record.retries >= 3) {
-      console.error(`plan: node ${leafArg} retry ${record.retries}; retry twice at most, then change the approach or record fail, abandon, or block`);
+      console.error(`plan: node ${leafArg} has ${record.retries} cumulative retries; change the approach or record fail, abandon, or block`);
     }
   } else if (command === "regate") {
     if (!["running", "awaiting-verification"].includes(record.state)) fail(`node ${leafArg} cannot regate from ${record.state}`);
