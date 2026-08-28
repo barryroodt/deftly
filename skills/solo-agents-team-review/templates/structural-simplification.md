@@ -22,6 +22,9 @@ Be **ambitious** about code structure. Do not stop at local cleanup. Actively hu
 - Style, formatting, naming conventions (that's the conventions reviewer)
 - Whether code matches the spec (that's the spec-compliance reviewer)
 - Cross-service contract alignment (that's the contracts reviewer)
+- Local, line-level simplification inside a single function — nesting depth, ternaries, naming clarity, single-use helpers, dead local code (that's the code-simplifier reviewer)
+
+Boundary: `structural-simplification` owns structural deletions (layers, modules, whole abstractions); `code-simplifier` owns local, behavior-preserving simplification within functions and blocks.
 
 If you find issues in those areas, record them under **Notes for Other Reviewers** in your review output (name the target lane). The orchestrator routes them. Do not report them as your own findings.
 
