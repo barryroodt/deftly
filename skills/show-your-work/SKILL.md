@@ -1,6 +1,6 @@
 ---
-name: proof-of-life
-description: Proof-backed completion discipline for substantial work and multi-agent builds. Use when work must finish against runnable gates, when independent leaves should run through bounded rolling dispatch, or when blocked work needs an honest restart-ready handover. Triggers on /proof-of-life, prove it is done, completion gates, rolling dispatch, dependency plan, and do not stop half-finished.
+name: show-your-work
+description: Proof-backed completion discipline for substantial work and multi-agent builds. Use when work must finish against runnable gates, when independent leaves should run through bounded rolling dispatch, or when blocked work needs an honest restart-ready handover. Triggers on /show-your-work, prove it is done, completion gates, rolling dispatch, dependency plan, and do not stop half-finished.
 license: Apache-2.0 with adapted MIT material; see ATTRIBUTION.md and LICENSE.unlazy
 metadata:
   author: Barry Roodt
@@ -9,9 +9,9 @@ metadata:
   upstream-revision: ed9e8d2b5919698cf2c54bda270d507e10b69617
 ---
 
-# Proof of Life
+# Show Your Work
 
-Proof of Life makes incomplete work structurally visible. A completion claim requires runnable gates, fresh evidence, and parent verification. Larger builds use a machine-checked dependency plan and bounded rolling dispatch.
+Show Your Work makes incomplete work structurally visible. A completion claim requires runnable gates, fresh evidence, and parent verification. Larger builds use a machine-checked dependency plan and bounded rolling dispatch.
 
 This skill is inspired by and adapted from [unlazy v2](https://github.com/Leonxlnx/unlazy) by Leonxlnx. Read [ATTRIBUTION.md](ATTRIBUTION.md) for inherited concepts, original changes, and license details.
 
@@ -39,6 +39,7 @@ Skip this skill for conversational replies, factual questions, trivial edits, or
 6. `abandoned` and `blocked` permit handover, never successful completion.
 7. Continue dispatching reachable work after an unrelated failure.
 8. Report only facts present in the plan state and gate evidence.
+9. A dispatched gate contract stays pinned until the parent reviews the change and re-pins it.
 
 ## Pick a mode
 
@@ -101,7 +102,7 @@ File ownership defaults to the complete file or directory tree. Parent and desce
 
 ## Rolling driver loop
 
-The parent is the sole state writer. State defaults to `.proof-of-life/state.json`.
+The parent is the sole state writer. State defaults to `.show-your-work/state.json`.
 
 1. Ask for the next bounded batch:
 
@@ -114,6 +115,8 @@ The parent is the sole state writer. State defaults to `.proof-of-life/state.jso
    ```bash
    node <skill-dir>/scripts/plan.mjs start PLAN.json <node-id>
    ```
+
+   `start` pins a fingerprint of the node's gate contract: gate IDs, titles, `CHECK`, and `EXPECT`. Checkbox state, `EVIDENCE` updates, and `ABANDON` entries are runtime outcomes and stay outside the pin.
 
 3. For a leaf, give the worker only the stable contract, its plan entry, and its gate file. For an integration node, the parent can run the gates directly or dispatch a strong integration worker.
 
@@ -129,15 +132,21 @@ The parent is the sole state writer. State defaults to `.proof-of-life/state.jso
    node <skill-dir>/scripts/plan.mjs verify PLAN.json <node-id>
    ```
 
+   `verify` recomputes the contract fingerprint first and refuses a mismatch without touching node state. Review the amendment, then re-pin deliberately:
+
+   ```bash
+   node <skill-dir>/scripts/plan.mjs regate PLAN.json <node-id>
+   ```
+
    If verification fails and the node remains correctable, reserve capacity before redispatch:
 
    ```bash
    node <skill-dir>/scripts/plan.mjs retry PLAN.json <node-id>
    ```
 
-   Send the executor the exact failed gates. `retry` moves `awaiting-verification` back to `running`.
+   Send the executor the exact failed gates. `retry` moves `awaiting-verification` back to `running` and adds to the node's cumulative `retries` count. The scheduler never blocks a retry; it warns from a node's third. Treat that warning as the signal to change the approach or record a terminal outcome.
 
-6. A verified node unlocks its dependents. Fill the free slot immediately. Do not wait for an unrelated active node.
+6. A verified node unlocks its dependents. Fill every free slot from the new `ready` set immediately. Do not wait for an unrelated active node. Release a persistent worker once its node verifies and no next assignment exists. A reused worker gets the full fresh brief for its next node.
 
 7. Record non-success outcomes with a reason:
 

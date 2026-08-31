@@ -111,7 +111,7 @@ if (!files.length && !plan.present) process.exit(0);
 
 if (plan.present && plan.status === 3) {
   console.log(JSON.stringify({
-    systemMessage: "proof-of-life: terminal non-success handover; no actionable leaves remain. Report failed, abandoned, and blocked outcomes without claiming completion.",
+    systemMessage: "show-your-work: terminal non-success handover; no actionable leaves remain. Report failed, abandoned, and blocked outcomes without claiming completion.",
   }));
   process.exit(0);
 }
@@ -122,7 +122,7 @@ const planActionable = plan.present && plan.status === 1;
 const planInvalid = plan.present && plan.status === 2;
 if (!gates.unmet.length && !planActionable && !planInvalid) process.exit(0);
 
-const stateDir = join(cwd, ".proof-of-life");
+const stateDir = join(cwd, ".show-your-work");
 const statePath = join(stateDir, "hook-state.json");
 const hash = createHash("sha256")
   .update(gates.combined)
@@ -146,7 +146,7 @@ try {
 
 if (state.blocks > MAX_BLOCKS) {
   console.log(JSON.stringify({
-    systemMessage: `proof-of-life: releasing after ${MAX_BLOCKS} stops without progress; ${gates.unmet.length} gates remain unmet, actionable plan state is ${planActionable}, and invalid plan state is ${planInvalid}.`,
+    systemMessage: `show-your-work: releasing after ${MAX_BLOCKS} stops without progress; ${gates.unmet.length} gates remain unmet, actionable plan state is ${planActionable}, and invalid plan state is ${planInvalid}.`,
   }));
   process.exit(0);
 }
@@ -158,6 +158,6 @@ if (planInvalid) reasons.push(`PLAN.json or state is invalid: ${plan.output.trim
 if (gates.unmet.length) reasons.push(`${gates.unmet.length} gate(s) unmet: ${gateList}`);
 console.log(JSON.stringify({
   decision: "block",
-  reason: `proof-of-life: ${reasons.join("; ")}. Continue the next actionable leaf, verify returned work, or record a reasoned terminal outcome.`,
+  reason: `show-your-work: ${reasons.join("; ")}. Continue the next actionable leaf, verify returned work, or record a reasoned terminal outcome.`,
 }));
 process.exit(0);

@@ -1,6 +1,6 @@
 # PLAN.json format
 
-`PLAN.json` is the canonical scheduling input. It contains declarations only. Runtime state belongs in `.proof-of-life/state.json`.
+`PLAN.json` is the canonical scheduling input. It contains declarations only. Runtime state belongs in `.show-your-work/state.json`.
 
 ## Schema
 
@@ -73,13 +73,17 @@ The state file contains a record for each node:
     "contract": {
       "state": "pending",
       "reason": null,
-      "blockedBy": null
+      "blockedBy": null,
+      "gateHash": null,
+      "retries": 0
     }
   }
 }
 ```
 
 The parent is the only writer. Mutations use an atomic temporary-file rename. A plan hash mismatch invalidates stale state.
+
+`gateHash` is the gate contract fingerprint pinned by `start` and re-pinned only by `regate`. `verify` refuses a node whose current contract differs from the pin. `retries` is a cumulative per-node count of `retry` transitions; it never resets, and from the third retry the scheduler warns on standard error without blocking. State files written before these fields existed stay valid: a missing pin is warned about and pinned at the next `verify`, and a missing counter reads as zero.
 
 ## Readiness
 

@@ -26,7 +26,7 @@ if (globalTarget && shared) {
 
 const ownPath = fileURLToPath(import.meta.url);
 const hookScript = join(dirname(ownPath), "stop-hook.mjs");
-const marker = "proof-of-life";
+const marker = "show-your-work";
 const target = globalTarget
   ? join(homedir(), ".claude", "settings.json")
   : join(process.cwd(), ".claude", shared ? "settings.json" : "settings.local.json");
@@ -50,14 +50,14 @@ const kept = stopHooks.filter((entry) => !isOurs(entry));
 
 if (uninstall) {
   if (kept.length === stopHooks.length) {
-    console.log(`Nothing to remove: no Proof of Life Stop hook found in ${target}`);
+    console.log(`Nothing to remove: no Show Your Work Stop hook found in ${target}`);
     process.exit(0);
   }
   settings.hooks.Stop = kept;
   if (!settings.hooks.Stop.length) delete settings.hooks.Stop;
   if (!Object.keys(settings.hooks).length) delete settings.hooks;
   writeFileSync(target, `${JSON.stringify(settings, null, 2)}\n`);
-  console.log(`Removed Proof of Life Stop hook from ${target}`);
+  console.log(`Removed Show Your Work Stop hook from ${target}`);
   process.exit(0);
 }
 
@@ -77,9 +77,9 @@ settings.hooks.Stop = [...kept, entry];
 mkdirSync(dirname(target), { recursive: true });
 writeFileSync(target, `${JSON.stringify(settings, null, 2)}\n`);
 
-console.log(`Installed Proof of Life Stop hook into ${target}
+console.log(`Installed Show Your Work Stop hook into ${target}
   command: node "${hookScript}"
   effect: blocks exit while actionable plan work or unmet gates remain
   handover: allows exit when no action remains and root success is impossible
   remove: node "${ownPath}"${globalTarget ? " --global" : shared ? " --shared" : ""} --uninstall
-  note: add .proof-of-life/ to .gitignore`);
+  note: add .show-your-work/ to .gitignore`);

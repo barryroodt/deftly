@@ -39,9 +39,12 @@ ABANDON: G2 external system is unavailable
 | `--verify` | Re-run every runnable gate, including checked gates. |
 | `--status` | Parse and report without executing commands or changing files. |
 | `--strict` | Return non-success when any gate is abandoned. |
+| `--contract-hash` | Print one SHA-256 contract fingerprint per file without executing commands or changing files. |
 | `--jobs N` | Run up to N distinct checks concurrently. |
 
 Equal `CHECK` strings share one execution during a checker run. Each gate still evaluates its own `EXPECT`.
+
+The contract fingerprint covers gate IDs, titles, `CHECK`, and `EXPECT`. Checkbox state, `EVIDENCE` lines, and `ABANDON` entries are runtime outcomes and stay outside the fingerprint. Gate runs and honest abandonment reports never change it; strict verification already turns abandonment into a distinct terminal result.
 
 ## Exit codes
 

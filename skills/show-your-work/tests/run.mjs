@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Proof of Life behavioral fixtures. Original work under Apache-2.0.
+// Show Your Work behavioral fixtures. Original work under Apache-2.0.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -83,12 +83,12 @@ function singleLeafPlan() {
 }
 
 function temp(name) {
-  return mkdtempSync(join(tmpdir(), `proof-of-life-${name}-`));
+  return mkdtempSync(join(tmpdir(), `show-your-work-${name}-`));
 }
 
 function suiteSkill() {
   const skill = readFileSync(join(skillDir, "SKILL.md"), "utf8");
-  assert.match(skill, /^name: proof-of-life$/m);
+  assert.match(skill, /^name: show-your-work$/m);
   assert.match(skill, /Leonxlnx\/unlazy/);
   assert.match(skill, /root integration node/);
   assert.match(skill, /plan\.mjs retry/);
@@ -157,6 +157,15 @@ function suitePlan() {
       assert.equal(run(planScript, ["retry", "PLAN.json", "a"], retryDir).status, 0);
       result = run(planScript, ["status", "PLAN.json"], retryDir);
       assert.equal(JSON.parse(result.stdout).nodes.a.state, "running");
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], retryDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], retryDir).status, 1);
+      assert.equal(run(planScript, ["retry", "PLAN.json", "a"], retryDir).status, 0);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], retryDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], retryDir).status, 1);
+      result = run(planScript, ["retry", "PLAN.json", "a"], retryDir);
+      assert.equal(result.status, 0);
+      assert.match(result.stderr, /3 cumulative retries/);
+      assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], retryDir).stdout).nodes.a.retries, 3);
     } finally {
       rmSync(retryDir, { recursive: true, force: true });
     }
@@ -175,6 +184,52 @@ function suitePlan() {
       assert.equal(JSON.parse(result.stdout).nodes.root.blockedBy, "a");
     } finally {
       rmSync(blockedDir, { recursive: true, force: true });
+    }
+
+    const pinnedDir = temp("pinned");
+    try {
+      writePlan(pinnedDir, singleLeafPlan());
+      assert.equal(run(planScript, ["start", "PLAN.json", "a"], pinnedDir).status, 0);
+      result = run(planScript, ["status", "PLAN.json"], pinnedDir);
+      assert.match(JSON.parse(result.stdout).nodes.a.gateHash, /^[0-9a-f]{64}$/);
+      assert.equal(run(gateScript, ["gates/a.md"], pinnedDir).status, 0);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], pinnedDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], pinnedDir).status, 0);
+    } finally {
+      rmSync(pinnedDir, { recursive: true, force: true });
+    }
+
+    const tamperDir = temp("tamper");
+    try {
+      writePlan(tamperDir, singleLeafPlan());
+      assert.equal(run(planScript, ["start", "PLAN.json", "a"], tamperDir).status, 0);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], tamperDir).status, 0);
+      write(join(tamperDir, "gates", "a.md"), gate(`node -e "console.log('ok2')"`, "ok2"));
+      result = run(planScript, ["verify", "PLAN.json", "a"], tamperDir);
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, /changed since dispatch/);
+      assert.match(result.stderr, /regate PLAN\.json a/);
+      assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], tamperDir).stdout).nodes.a.state, "awaiting-verification");
+      assert.equal(run(planScript, ["regate", "PLAN.json", "a"], tamperDir).status, 0);
+      assert.equal(run(planScript, ["verify", "PLAN.json", "a"], tamperDir).status, 0);
+    } finally {
+      rmSync(tamperDir, { recursive: true, force: true });
+    }
+
+    const abandonDir = temp("abandon");
+    try {
+      writePlan(abandonDir, singleLeafPlan());
+      assert.equal(run(planScript, ["start", "PLAN.json", "a"], abandonDir).status, 0);
+      const abandonGate = join(abandonDir, "gates", "a.md");
+      write(abandonGate, `${readFileSync(abandonGate, "utf8")}\nABANDON: G1 upstream unavailable\n`);
+      assert.equal(run(planScript, ["return", "PLAN.json", "a"], abandonDir).status, 0);
+      result = run(planScript, ["verify", "PLAN.json", "a"], abandonDir);
+      assert.equal(result.status, 3, result.stderr);
+      assert.match(result.stdout, /TERMINAL HANDOVER/);
+      assert.equal(run(planScript, ["abandon", "PLAN.json", "a", "--reason", "upstream unavailable"], abandonDir).status, 0);
+      assert.equal(JSON.parse(run(planScript, ["status", "PLAN.json"], abandonDir).stdout).nodes.root.blockedBy, "a");
+    } finally {
+      rmSync(abandonDir, { recursive: true, force: true });
     }
 
     for (const [label, mutate, expected] of [
@@ -249,6 +304,24 @@ ABANDON: G1 upstream unavailable
 `);
     assert.equal(run(gateScript, ["abandoned.md"], dir).status, 0);
     assert.equal(run(gateScript, ["--strict", "abandoned.md"], dir).status, 3);
+
+    write(join(dir, "contract.md"), gate());
+    const hashRuns = [run(gateScript, ["--contract-hash", "contract.md"], dir)];
+    assert.equal(run(gateScript, ["contract.md"], dir).status, 0);
+    hashRuns.push(run(gateScript, ["--contract-hash", "contract.md"], dir));
+    write(join(dir, "contract.md"), gate(`node -e "console.log('ok2')"`, "ok2"));
+    hashRuns.push(run(gateScript, ["--contract-hash", "contract.md"], dir));
+    const hashes = hashRuns.map((entry) => {
+      assert.equal(entry.status, 0, entry.stderr);
+      return entry.stdout.trim().split(/\s+/)[0];
+    });
+    assert.match(hashes[0], /^[0-9a-f]{64}$/);
+    assert.equal(hashes[0], hashes[1]);
+    assert.notEqual(hashes[1], hashes[2]);
+    write(join(dir, "contract.md"), `${readFileSync(join(dir, "contract.md"), "utf8")}\nABANDON: G1 upstream unavailable\n`);
+    result = run(gateScript, ["--contract-hash", "contract.md"], dir);
+    assert.equal(result.status, 0);
+    assert.equal(result.stdout.trim().split(/\s+/)[0], hashes[2]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -314,7 +387,7 @@ function suiteHook() {
     const settingsPath = join(installerDir, ".claude", "settings.json");
     const first = readFileSync(settingsPath, "utf8");
     const settings = JSON.parse(first);
-    assert.match(settings.hooks.Stop[0].hooks[0].command, /proof-of-life.*stop-hook\.mjs/);
+    assert.match(settings.hooks.Stop[0].hooks[0].command, /show-your-work.*stop-hook\.mjs/);
     result = run(installerScript, ["--shared"], installerDir);
     assert.equal(result.status, 0);
     assert.equal(readFileSync(settingsPath, "utf8"), first);
@@ -334,7 +407,7 @@ function suiteAttribution() {
   assert.match(attribution, /Leonxlnx\/unlazy/);
   assert.match(attribution, /ed9e8d2b5919698cf2c54bda270d507e10b69617/);
   assert.match(attribution, /Inherited concepts/);
-  assert.match(attribution, /Proof of Life changes/);
+  assert.match(attribution, /Show Your Work changes/);
   assert.match(license, /MIT License/);
   assert.match(license, /Copyright \(c\) 2026 Leonxlnx/);
   for (const file of ["gate-check.mjs", "stop-hook.mjs", "install-hooks.mjs"]) {
@@ -348,7 +421,7 @@ function suiteAttribution() {
 function suiteRepository() {
   const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
   const marketplace = JSON.parse(readFileSync(join(repoRoot, ".claude-plugin", "marketplace.json"), "utf8"));
-  assert.match(readme, /\[`proof-of-life`\]\(\.\/skills\/proof-of-life\/\)/);
+  assert.match(readme, /\[`show-your-work`\]\(\.\/skills\/show-your-work\/\)/);
   assert.match(readme, /Inspired by Leonxlnx\/unlazy/);
   assert.equal(marketplace.plugins[0].skills, "./skills");
   console.log("PASS repository integration");
