@@ -26,6 +26,8 @@ Be **ambitious** about code structure. Do not stop at local cleanup. Actively hu
 
 Boundary: `structural-simplification` owns structural deletions (layers, modules, whole abstractions); `code-simplifier` owns local, behavior-preserving simplification within functions and blocks.
 
+Layer boundary: `radical-simplification` simplifies the approach before code exists; the `structural-simplification` and `code-simplifier` review lanes simplify the artifact at review time.
+
 If you find issues in those areas, record them under **Notes for Other Reviewers** in your review output (name the target lane). The orchestrator routes them. Do not report them as your own findings.
 
 ## Non-Negotiable Standards

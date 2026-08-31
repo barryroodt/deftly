@@ -4,6 +4,8 @@ You are reviewing code changes for local simplicity, clarity, and readability. Y
 
 Boundary: `structural-simplification` owns structural deletions (layers, modules, whole abstractions); `code-simplifier` owns local, behavior-preserving simplification within functions and blocks.
 
+Layer boundary: `radical-simplification` simplifies the approach before code exists; the `structural-simplification` and `code-simplifier` review lanes simplify the artifact at review time.
+
 ## Your Focus
 
 - **Control flow**: deep nesting where early returns or guard clauses flatten it, nested ternaries, dense expressions where explicit flow is clearer, double negatives, redundant boolean logic

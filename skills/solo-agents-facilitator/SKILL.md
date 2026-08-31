@@ -272,6 +272,7 @@ Use a separate integration or validation orchestrator when completion requires j
 - deciding whether independently produced changes form one coherent result,
 - reviewing implementation against a product or architecture contract,
 - resolving conflicting evidence from separate orchestrators,
+- judging whether a proposed approach or decomposition is the simplest shape that still meets the outcome (an approach-simplification charter; the owning orchestrator loads `skill://radical-simplification`),
 - validating a release or merge recommendation across scopes.
 
 This orchestrator must remain independent from the implementation it judges. Give it the outcome, acceptance criteria, completed evidence, and applicable charters. Do not give it a facilitator opinion.
