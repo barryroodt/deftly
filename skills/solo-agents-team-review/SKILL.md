@@ -1,6 +1,6 @@
 ---
 name: solo-agents-team-review
-description: Parallel multi-perspective code review orchestrated through Solo MCP worker sub-agents. Use when the user wants a thorough multi-agent review of a branch or PR before merge, run via Solo. Spawns one reviewer worker per lane (correctness, conventions, spec-compliance, contracts, structural-simplification, tests, specialists) and produces a single unified verdict. Self-contained (bundles its reviewer templates); harness-agnostic — the hard dependency is Solo MCP. Triggers on "/solo-agents-team-review", "solo team review", "solo agents review", "review PR with solo agents", "solo-orchestrated review".
+description: Parallel multi-perspective code review orchestrated through Solo MCP worker sub-agents. Use when the user wants a thorough multi-agent review of a branch or PR before merge, run via Solo. Spawns one reviewer worker per lane (correctness, conventions, spec-compliance, contracts, structural-simplification, code-simplifier, tests, specialists) and produces a single unified verdict. Self-contained (bundles its reviewer templates); harness-agnostic — the hard dependency is Solo MCP. Triggers on "/solo-agents-team-review", "solo team review", "solo agents review", "review PR with solo agents", "solo-orchestrated review".
 ---
 
 # Solo Agents Team Review
@@ -48,6 +48,7 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 | `contracts` | `templates/contracts.md` | |
 | `spec-compliance` | `templates/spec-compliance.md` | |
 | `structural-simplification` | `templates/structural-simplification.md` | |
+| `code-simplifier` | `templates/code-simplifier.md` | local, behavior-preserving simplification; complements `structural-simplification` |
 | `test-reviewer` | `templates/tests.md` | file is `tests.md`, lane is `test-reviewer` |
 | `specialist` | *(canonical shape from `templates/correctness.md`)* | loads its own domain skill (`skill://<name>`) for review knowledge; **output contract** is the Output Format section of `correctness.md` with the heading changed to `## <Domain> Specialist Review` — embed that section so the scratchpad aggregates like every other lane |
 
@@ -78,10 +79,11 @@ The orchestrator loads the mapped template file and **embeds its full content** 
 | Schema / cross-service contract drift | `contracts` | shared types, schemas, API signatures |
 | Missing/incomplete spec coverage | `spec-compliance` | new behavior not in plan/AGENTS.md |
 | Unmaintainable structure | `structural-simplification` | large diffs, growing files, new shared-flow branching |
+| Needlessly complex new code (local) | `code-simplifier` | deep nesting, nested ternaries, single-use helpers, dead or duplicated code in changed hunks |
 | Tests give false confidence | `test-reviewer` | diff touches `*.test.*`, `*.spec.*`, `tests/`, `__tests__/`, `spec/` |
 | Language/framework idioms | `specialist` | `.rs`/`.go` etc. + a matching domain skill |
 
-Rules: pick the **minimum set**; **cap at 5 spawned reviewer workers** — the cap counts workers, not lanes: each per-zone `conventions:<zone>` instance counts individually, because the refinement round is O(n²) in workers. If language zones push the count past 5, merge the least-changed zones into a single `conventions` worker, then drop optional lanes (`structural-simplification` first, then `specialist`); skip `structural-simplification` for tiny localized diffs; always include `spec-compliance` for features; add `test-reviewer` when test paths change; add a `specialist` only when a domain skill encodes knowledge the templates miss. Orchestrator-owned validation terminals are outside the review team and do not count toward this cap.
+Rules: pick the **minimum set**; **cap at 5 spawned reviewer workers** — the cap counts workers, not lanes: each per-zone `conventions:<zone>` instance counts individually, because the refinement round is O(n²) in workers. If language zones push the count past 5, merge the least-changed zones into a single `conventions` worker, then drop optional lanes (`code-simplifier` first, then `structural-simplification`, then `specialist`); skip `structural-simplification` for tiny localized diffs; include `code-simplifier` when the diff adds non-trivial new logic, and skip it for docs-only, config-only, or mechanical diffs; always include `spec-compliance` for features; add `test-reviewer` when test paths change; add a `specialist` only when a domain skill encodes knowledge the templates miss. Orchestrator-owned validation terminals are outside the review team and do not count toward this cap.
 - Assign every required command to exactly one evidence owner: one accepted authoritative CI result or the orchestrator-owned local validation runner. Reviewer lanes perform static assessment only and never execute validation.
 - Prepare the candidate context and validation records from the proposed plan, but do not write either scratchpad until the current plan and mode are confirmed. A plan revision invalidates these candidate records.
 
@@ -106,7 +108,7 @@ Track these durations separately: `scope`, `machine preflight`, `human confirmat
 
 Present one required confirmation form containing both fields:
 
-1. **Plan decision:** `approve`, or a concrete revision to the shown composition (lane → template → pinned lane slice), selected harness/model, pinned head SHA, and validation plan. The validation plan lists each command, its one evidence owner, accepted exact-SHA CI evidence, local commands, repository-declared parallel-safe groups, and sequential groups.
+1. **Plan decision:** `approve`, or a concrete revision to the shown composition (lane → template → pinned lane slice), selected harness/model, pinned head SHA, and validation plan. The validation plan lists each command, its one evidence owner, accepted exact-SHA CI evidence, local commands, repository-declared parallel-safe groups, and sequential groups. Optional lanes (`code-simplifier`, `structural-simplification`, `specialist`) are the default cut order when revising composition.
 2. **Action mode:** exactly one of:
    1. **Summary only (`summary`):** Return the unified verdict. Do not draft or post comments. Do not modify code.
    2. **Draft review comments for approval (`draft-comments`):** Return the unified verdict and exact proposed comments. Wait for explicit approval before posting them. Do not modify code.
