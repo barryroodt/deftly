@@ -36,7 +36,8 @@ If persistence fails, try the next available adapter. Keep the original worker u
 2. **Still producing after a timer deadline:** extend the finite wait once, up to about twice the prior wait. Do not run done-criteria while work is still producing.
 3. **Stuck with no output progress:** preserve state, then `restart_process` once. Restart restores the launch specification, not the task. Resend `agent_instructions`, the active immutable task packet, and the restart packet as a real smoke test.
 4. **Crashed:** spawn once with the same harness and model, using the active task packet and saved restart packet. If that fails, escalate.
-5. **Escalation:** for a harness with selectable models, close only after the handoff is stored, then spawn with the next stronger supported model. For a fixed-default harness, switch to another live harness. `restart_process` is not model escalation.
+5. **Name the confusion before escalating:** two failed retries on the same approach usually signal a wrong angle, not a weak model. Write one sentence stating what is not understood, expand it into falsifiable hypotheses with one cheap test each (see `skill://radical-simplification`, `references/audit-name-the-confusion.md`), and run the cheapest test. Record the named confusion and test results in the restart packet so a replacement does not rerun the same variants. Escalate only when the named confusion survives the cheap tests or capability itself is the blocker.
+6. **Escalation:** for a harness with selectable models, close only after the handoff is stored, then spawn with the next stronger supported model. For a fixed-default harness, switch to another live harness. `restart_process` is not model escalation.
 
 ## Recover failed mutations
 

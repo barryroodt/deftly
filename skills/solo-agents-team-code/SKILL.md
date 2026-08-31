@@ -121,6 +121,8 @@ Add an independent reviewer or verifier when completion depends on cross-worker 
 
 This lane is unnecessary for ordinary isolated work. It returns evidence and one `accept`, `reject`, or `blocked` judgment. The orchestrator remains accountable for resolving the result and deciding whether another implementation or judgment pass is necessary.
 
+A **plan-simplifier** is a named instance of this lane for approach-level judgment. Use it before dispatch when a decomposition grows past the worker cap, accretes packets or dependency edges, or the user flags the approach as overengineered. Its read-only packet carries the outcome, the proposed decomposition, the acceptance criteria, and the symptom-matched move text from `skill://radical-simplification` (`frame`/`reduce`/`invert` rules for plan review) — embed the rule text in the packet because a spawned worker cannot resolve skill paths. It returns `accept` or a simpler counter-proposal. A counter-proposal must still satisfy the complete completion contract: scope shrink disguised as simplification is grounds to reject the counter-proposal, not a simplification.
+
 ## The Idle-Fire Loop
 
 When timers are available, arm the timer only after the real first prompt is sent:
@@ -204,5 +206,5 @@ Use `expected_revision` only when the installed scratchpad operation exposes it.
 - **NEVER** assume idle means done — **INSTEAD** run the concrete Done checks before completing a todo or dispatching dependent work.
 - **NEVER** send a bare prompt to a worker — **INSTEAD** prepend `agent_instructions` so the worker has its Solo process/project context.
 - **NEVER** busy-poll process output — **INSTEAD** use idle-fire timers when available; otherwise inspect once on a new user turn or Solo lifecycle event.
-- **NEVER** wait indefinitely on a stalled worker — **INSTEAD** after 2 failed retries escalate per the selected harness: a selectable-model harness → `close_process` + `spawn_agent` with a stronger model in that harness's form; a fixed-default harness → switch to another available harness (respawning it unchanged is not an escalation); if neither is possible, mark the todo blocked. `restart_process` only relaunches the same spec.
+- **NEVER** wait indefinitely on a stalled worker — **INSTEAD** after 2 failed retries, run a named-confusion pass (see `references/failure-handling.md`), then escalate per the selected harness: a selectable-model harness → `close_process` + `spawn_agent` with a stronger model in that harness's form; a fixed-default harness → switch to another available harness (respawning it unchanged is not an escalation); if neither is possible, mark the todo blocked. `restart_process` only relaunches the same spec.
 - **NEVER** dispatch overlapping edits without mutual exclusion — **INSTEAD** use live lock tools in a consistent order when available, or require disjoint ownership.
