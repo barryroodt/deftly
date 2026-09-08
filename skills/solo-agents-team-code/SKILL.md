@@ -1,9 +1,15 @@
 ---
 name: solo-agents-team-code
-description: "Use when spawning sub-agents, coordinating multi-agent coding workflows, handling worker restarts, model-fallback escalation, or preventing deadlocks via lock ordering. Also covers idle-fire dispatch loops, sharing state across agents, and stalled-worker recovery. Harness-agnostic; the hard dependency is Solo MCP (works with whatever agent harness Solo can spawn). Triggers: spawn agent, orchestrate workers, sub-agent coordination, idle timer, multi-agent, dispatch loop, restart worker, model fallback, lock ordering, deadlock, timeout escalation."
+description: "Use for explicitly requested Solo orchestration, or work needing persistent worker lifecycle, cross-session or cross-harness coordination, idle-fire wakeups, and shared locks beyond the host harness's native delegation. Prefer native in-session delegation when it meets the task's needs; a generic request to spawn agents does not by itself select Solo. Harness-agnostic; requires Solo MCP and a harness Solo can spawn. Covers worker recovery, model selection, bounded dispatch, and lock ordering."
 ---
 
 # Solo Agents Team Code
+
+## Scope
+
+Use Solo when the caller explicitly selects it, or when the task needs coordination the host harness's native delegation cannot provide: persistent worker lifecycle, cross-session handoffs, multiple harnesses, or idle-fire wakeups. Prefer native in-session delegation when it satisfies the request without those extra requirements.
+
+This is capability-based selection, not a requirement to use a particular host. For example, Omp's native `task` tool can handle ordinary same-session delegation; another harness may offer an equivalent. If no native mechanism meets the need and Solo can, use Solo. Honor an explicit Solo request rather than silently substituting native delegation.
 
 ## Overview
 
@@ -59,10 +65,18 @@ Workers can report facts that invalidate a packet. They must not rewrite its sco
 ## Spawn Defaults
 
 - **Pick the harness without name bias.** Resolve at spawn time via `list_agent_tools`: use the **caller-specified** harness if one was given (match by `name` or `id`); otherwise any harness `list_agent_tools` returns — every returned entry is a spawnable agent runtime, so do not filter by name or `tool_type`. If several are returned and the caller named none, pick one and note which (or ask). If a caller named a harness that is not in the list, **halt and report the available names** rather than substituting a different one. Never hardcode the id, it shifts per machine. Halt too if `list_agent_tools` returns nothing — Solo MCP is the hard dependency, not any particular harness.
-- **Model handling follows the selected harness's contract.** Pass the model in the chosen harness's own form: e.g. the `Omp` harness uses a per-launch `extra_args=["--model", "<provider>/<model>"]` (never mutating saved defaults), slugs from `omp models`; a harness with its own model flag uses that flag/slug format. A caller-supplied model wins and is tried first — but only a harness with a documented model mechanism can honor it: if a model is explicitly requested and the selected harness has no known way to pass it, **halt and report (or pick a harness that supports it)** rather than silently running an unrelated saved default. Only when no model is requested may a harness run its saved default. Never assume one harness's flag works for another.
+- **Model handling follows the selected harness's contract.** Pass the selected model through that harness's documented mechanism, without mutating saved defaults. `Omp` accepts per-launch `extra_args=["--model", "<id-or-role>"]`; other harnesses use their own flags and selectors. A caller-supplied model wins and is tried first. If the requested selector cannot be honored, halt and report rather than silently substituting a model or dropping the selector. Only when no selector is requested or chosen may a harness run its saved default; confirm that default is appropriate for the job. Never assume one harness's flag or role syntax works for another.
 - **"Available" means it actually runs**, not that it appears in a model list or that `spawn_agent` succeeds. Traps: (1) a provider can be listed but unauthenticated; (2) an authenticated account can still reject a specific slug at runtime (e.g. ChatGPT-OAuth accounts rejecting certain `*-codex` slugs with "model is not supported when using Codex with a ChatGPT account"). Treat any selected model/harness as worth a smoke test. A worker that boots can still refuse the first turn.
 - **Verify with a send-input smoke test, never spawn acceptance alone.** After spawning, `send_input` a real first prompt — with the worker's `agent_instructions` prepended and crisp done-criteria included (e.g. "clean tree + one new commit, `cargo test` green") — and read the output: a working worker prints its boot banner and begins the task; a broken one prints an auth/model error banner ("No API key" / "not supported ..."). Only then arm the idle timer. The `wait_ms` below (10000) is a starting window, not a hard limit: slow boots (cold starts, large models, congested endpoints) can exceed it. Empty output with no error banner is a slow boot, not a broken worker — extend the wait and re-read before concluding. For a harness on a fixed default, the smoke test is how you confirm that default actually runs.
-- **Choosing a model.** A caller-supplied model always wins and is tried first. For a harness whose model you can select, escalate along a fallback ladder ordered standard→strongest (see `references/model-ladder.md`; re-derive slugs from that harness's own model list). For a fixed-default harness, "escalation" means switching to another available harness, not respawning the same default (see Failure & Timeout Handling).
+- **Choosing a model.** Choose the initial model for the job and the caller's constraints, not the first rung of a fixed provider ranking. Prefer suitable configured roles when the selected harness supports them, and let its configured runtime fallback handle supported failures. For a capability-driven escalation, derive the next suitable model from live availability and preserve the caller's constraints; do not duplicate automatic retries. See `references/model-ladder.md`. A fixed-default harness escalates by switching to another permitted available harness, not respawning the same default.
+
+### Omp worker selection
+
+A Solo-spawned top-level Omp process loads its own Omp settings, including `modelRoles`, but does **not** go through native task-agent dispatch. `task.agentModelOverrides` therefore does not select its model, and naming the Solo worker `reviewer` does not apply the native reviewer agent's mapping.
+
+Pass the chosen selector explicitly on each launch. Examples are `@task` for ordinary work, `@slow` for deliberate reasoning, or a configured custom review role such as `@reviewer`. These are job-selection examples, not a model-strength ranking. Confirm the role exists and maps to a suitable model on the target machine. A custom review role is optional: when none was requested and none is configured, choose a suitable available selector instead. An explicitly requested missing role is an error to report, not permission to invent a mapping or silently substitute another selector.
+
+Let Omp resolve aliases at launch; a cached concrete model must not freeze an old role mapping. Other harnesses still use their own documented selection mechanism.
 
 ```
 tools   = list_agent_tools()   # each entry exposes at least: id, name, tool_type
@@ -80,13 +94,13 @@ def launch_args(harness, model):
     if model is None:
         return []                       # no model requested -> harness runs its saved default
     if harness["name"] == "Omp":
-        return ["--model", model]       # Omp's contract: --model "<provider>/<model>", slugs from `omp models`
+        return ["--model", model]       # Omp accepts a concrete model id or an existing @role
     # <add other harnesses' documented model flag here as you learn them>
     halt_and_report(f"harness {harness['name']!r} has no known model-passing mechanism to honor "
                     f"requested model {model!r} — pick a harness that supports it, or omit the model")
 
 w = spawn_agent(agent_tool_id=harness["id"], name="worker",
-                extra_args=launch_args(harness, requested_model))  # requested_model = caller's model, else None -> saved default
+                extra_args=launch_args(harness, selected_model))  # caller's selector wins; otherwise choose for the job, or None for a suitable saved default
 # SMOKE TEST before trusting it — prepend agent_instructions (Solo process/project context):
 send_input(process_id=w["process_id"],
            input=w["agent_instructions"] + "\n\n" + "<first task prompt>", wait_ms=10000)  # extend for slow boots; empty+no-error != broken
@@ -202,7 +216,7 @@ Use `expected_revision` only when the installed scratchpad operation exposes it.
 ## Common Mistakes
 
 - **NEVER** hardcode the harness id, assume a specific harness, or filter by name / `tool_type` — **INSTEAD** resolve at runtime via `list_agent_tools`: the caller-specified harness if given, else any returned entry (all are spawnable agent runtimes). If the caller named a harness that is not returned, **halt and report the choices — never silently substitute another.** Halt too if `list_agent_tools` returns nothing at all.
-- **NEVER** assume one harness's model flag works for another, and **NEVER** silently ignore a requested model — **INSTEAD** pass a requested model in the *selected* harness's documented form (`Omp`: per-launch `--model <provider>/<model>`; others: their own flag); if the selected harness has no documented model mechanism, halt and report (or switch harnesses) rather than dropping the model. Only when no model is requested may a harness run its saved default; always smoke-test.
+- **NEVER** assume one harness's model flag or role syntax works for another, and **NEVER** silently ignore a requested model — **INSTEAD** pass the selected model through that harness's documented mechanism (`Omp`: per-launch `--model <id-or-role>`). Honor explicit selectors, verify configured roles, and never assume a Solo worker name applies native task-agent overrides. Run an unselected saved default only when it suits the job; always smoke-test.
 - **NEVER** assume idle means done — **INSTEAD** run the concrete Done checks before completing a todo or dispatching dependent work.
 - **NEVER** send a bare prompt to a worker — **INSTEAD** prepend `agent_instructions` so the worker has its Solo process/project context.
 - **NEVER** busy-poll process output — **INSTEAD** use idle-fire timers when available; otherwise inspect once on a new user turn or Solo lifecycle event.
