@@ -1,0 +1,21 @@
+{
+  "name": "diffdeck",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "diffdeck": "./diffdeck.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^3.1.1",
+    "highlight.js": "^11.12.0",
+    "marked": "^18.1.0",
+    "zod": "^4.6.5"
+  }
+}
