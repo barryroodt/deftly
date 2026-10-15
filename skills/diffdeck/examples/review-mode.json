@@ -1,0 +1,66 @@
+{
+  "title": "feat(checkout): retry declined charges once",
+  "pins": {
+    "base": "1111111111111111111111111111111111111111",
+    "head": "2222222222222222222222222222222222222222"
+  },
+  "origin": { "branch": "feat/retry-charges" },
+  "pr": { "url": "https://github.com/acme/shop/pull/42" },
+  "diff": { "exclude": ["**/pnpm-lock.yaml"] },
+  "document": [
+    {
+      "type": "section",
+      "title": "What / why",
+      "children": [
+        {
+          "type": "markdown",
+          "markdown": "Card charges that fail with a soft decline now get one retry after 2 s, through [`retryCharge`](review-source:head/src/checkout/retry.ts#L12-L38). Hard declines still fail at once."
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "id": "retry-flow",
+      "title": "Implementation",
+      "children": [
+        {
+          "type": "code_peek",
+          "caption": "The retry decision",
+          "source": { "file": "src/checkout/retry.ts", "start": { "side": "head", "line": 12 }, "end": { "side": "head", "line": 38 } }
+        },
+        { "type": "diff", "caption": "Core change", "files": ["src/checkout/retry.ts", "src/checkout/charge.ts"] },
+        { "type": "diff", "caption": "Other changes", "files": ["src/checkout/*.test.ts"] }
+      ]
+    }
+  ],
+  "review": {
+    "verdict": "**Comment.** The retry is sound. Two non-blocking comments: the backoff ignores the provider's `retry_after`, and one test passes for the wrong reason.",
+    "body": "Nice and small, thanks! Left two non-blocking comments inline.",
+    "event": "COMMENT",
+    "comments": [
+      {
+        "id": "c1",
+        "path": "src/checkout/retry.ts",
+        "line": 24,
+        "body": "The provider sends `retry_after` on soft declines. Could we wait that long when it's there, and fall back to 2 s otherwise?",
+        "theme": "Backoff",
+        "relates_to": "retry-flow"
+      },
+      {
+        "id": "c2",
+        "path": "src/checkout/retry.test.ts",
+        "line": 51,
+        "body": "This stub returns a hard decline, so the test passes before the retry code runs (`:31` returns early). A soft-decline stub would exercise the retry.",
+        "theme": "Tests"
+      },
+      {
+        "id": "c3",
+        "path": "src/checkout/charge.ts",
+        "line": 88,
+        "body": "Nit: `attempts` could be a const.",
+        "post": false
+      }
+    ],
+    "held_out": ["The idempotency key is reused across the retry. Correct by the provider's docs; not tested here."]
+  }
+}

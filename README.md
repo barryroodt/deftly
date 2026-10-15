@@ -26,6 +26,7 @@ This index lists every skill in `skills/`. Update it whenever you add or remove 
 | Skill | Description |
 | ----- | ----------- |
 | [`agent-team-review`](./skills/agent-team-review/) | Parallel multi-agent code review using Agent Teams. |
+| [`diffdeck`](./skills/diffdeck/) | Renders a PR or branch walkthrough as a private, self-contained HTML page, with an optional review tab whose response goes straight back to the agent. Themeable to your own design system. |
 | [`show-your-work`](./skills/show-your-work/) | Proof-backed completion with machine-checked plans, bounded rolling dispatch, exact parent verification, and honest handover. Inspired by Leonxlnx/unlazy. |
 | [`solo-agents-facilitator`](./skills/solo-agents-facilitator/) | Manually enters a Solo control-plane role that selects a project, confirms orchestrator runtimes, delegates outcomes, and relays decisions, evidence, feedback, and status. |
 | [`scaffold-project-workspace`](./skills/scaffold-project-workspace/) | Bootstraps a multi-repo project workspace from a Linear project — clones repos, generates per-repo skills, writes permissions, produces architecture docs. |
@@ -53,6 +54,11 @@ deftly/
 ├── scripts/new-skill.sh              # scaffolder
 └── scripts/test_new_skill.sh         # test harness for the scaffolder
 ```
+
+## Attribution
+
+- `diffdeck`'s walkthrough document shape (sections, flow diagrams, call-stack diffs, sequences) follows the review documents of [Whiteboard](https://github.com/devdotfast/whiteboard) by dev.fast.
+- `diffdeck`'s chapter ordering, unplaced-file warnings and send-to-agent loop are inspired by [Plannotator](https://github.com/backnotprop/plannotator) by backnotprop.
 
 ## License
 

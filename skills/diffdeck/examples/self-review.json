@@ -1,0 +1,73 @@
+{
+  "title": "fix(cart): keep discounts when a cart is merged",
+  "pins": {
+    "base": "3333333333333333333333333333333333333333",
+    "head": "4444444444444444444444444444444444444444"
+  },
+  "origin": { "branch": "fix/cart-merge-discounts" },
+  "pr": { "url": "https://github.com/acme/shop/pull/57" },
+  "document": [
+    {
+      "type": "section",
+      "id": "why",
+      "title": "What / why",
+      "children": [
+        {
+          "type": "markdown",
+          "markdown": "Signing in merges the guest cart into the saved one. [`mergeCarts`](review-source:head/src/cart/merge.ts#L8-L41) now carries the guest cart's discount codes across instead of dropping them."
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Implementation",
+      "children": [
+        { "type": "diff", "files": ["src/cart/merge.ts", "src/cart/merge.test.ts"] }
+      ]
+    }
+  ],
+  "review": {
+    "kind": "self",
+    "verdict": "**Ready after one fix.** Discounts survive the merge, but two codes for the same campaign now stack.",
+    "findings": [
+      {
+        "id": "f1",
+        "path": "src/cart/merge.ts",
+        "line": 27,
+        "body": "Both carts can hold a code from the same campaign, and the merged cart keeps both, so the discount applies twice.",
+        "why": "Customers would pay less than the campaign allows; this is the one behaviour change in the PR that's wrong.",
+        "theme": "Discounts",
+        "relates_to": "why",
+        "change": {
+          "current": "const codes = [...saved.codes, ...guest.codes];",
+          "proposed": "const codes = uniqueByCampaign([...saved.codes, ...guest.codes]);"
+        }
+      },
+      {
+        "id": "f2",
+        "path": "src/cart/merge.test.ts",
+        "line": 64,
+        "decision": "skip",
+        "body": "The test names say \"discount\" where they mean \"discount code\".",
+        "why": "Wording only; renaming now costs a re-review for no behaviour change.",
+        "theme": "Tests",
+        "change": {
+          "current": "it('keeps the discount', () => {",
+          "proposed": "it('keeps the discount code', () => {"
+        }
+      },
+      {
+        "id": "f3",
+        "target": "pr_body",
+        "decision": "discuss",
+        "body": "**Say who sees the change.** The summary describes the code, not that signed-in shoppers now keep the codes they entered as guests.",
+        "why": "Reviewers outside the cart team read the first line to decide if they need to look; it's a judgment call how much to change.",
+        "change": {
+          "current": "Carry discount codes through mergeCarts.",
+          "proposed": "Shoppers who enter a discount code as a guest now keep it after signing in."
+        }
+      }
+    ],
+    "held_out": ["The merge runs inside the sign-in transaction; checked, no change needed."]
+  }
+}

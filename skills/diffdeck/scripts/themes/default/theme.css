@@ -1,0 +1,79 @@
+/*
+ * diffdeck's built-in theme: neutral greys, a blue accent and system fonts.
+ * Copy this file to ~/.config/diffdeck/theme/theme.css to start a theme of your own.
+ */
+:root {
+  --dd-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --dd-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --dd-radius: 6px;
+}
+
+[data-theme='dark'] {
+  --background: #0f1115;
+  --card: #16191f;
+  --popover: #1c2028;
+  --secondary: #22262e;
+  --muted: #22262e;
+  --accent: #262b34;
+  --foreground: #e6e8eb;
+  --muted-foreground: #a1a7b3;
+  --tertiary-foreground: #6f7684;
+  --border: #2a2f38;
+  --input: #3a404b;
+  --ring: #5b8def;
+  --primary: #5b8def;
+  --border-brand: #2f4d85;
+  --warning: #e3a33b;
+  --border-warning: #6b4f1f;
+  --destructive: #ef5f5f;
+  --border-destructive: #6e2c2c;
+  --info: #b48cf2;
+  --border-info: #4d3a6e;
+  --code-foreground: #d6dae0;
+  --code-token-comment: #7d8590;
+  --code-token-keyword: #ff7b72;
+  --code-token-function: #d2a8ff;
+  --code-token-string: #a5d6ff;
+  --code-token-string-expression: #a5d6ff;
+  --code-token-number: #79c0ff;
+  --code-token-constant: #79c0ff;
+  --code-token-property: #79c0ff;
+  --code-token-parameter: #ffa657;
+  --code-token-punctuation: #c9d1d9;
+  --code-token-link: #58a6ff;
+}
+
+[data-theme='light'] {
+  --background: #ffffff;
+  --card: #f8f9fb;
+  --popover: #ffffff;
+  --secondary: #f1f3f6;
+  --muted: #f1f3f6;
+  --accent: #eef1f5;
+  --foreground: #1b1f24;
+  --muted-foreground: #57606a;
+  --tertiary-foreground: #8b949e;
+  --border: #e1e4e8;
+  --input: #d0d7de;
+  --ring: #2f6fdc;
+  --primary: #2f6fdc;
+  --border-brand: #a9c3f0;
+  --warning: #9a6700;
+  --border-warning: #e8cf8f;
+  --destructive: #cf222e;
+  --border-destructive: #f1b4b8;
+  --info: #8250df;
+  --border-info: #d4c2f5;
+  --code-foreground: #24292f;
+  --code-token-comment: #6e7781;
+  --code-token-keyword: #cf222e;
+  --code-token-function: #8250df;
+  --code-token-string: #0a3069;
+  --code-token-string-expression: #0a3069;
+  --code-token-number: #0550ae;
+  --code-token-constant: #0550ae;
+  --code-token-property: #0550ae;
+  --code-token-parameter: #953800;
+  --code-token-punctuation: #24292f;
+  --code-token-link: #0969da;
+}
