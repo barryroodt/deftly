@@ -193,7 +193,7 @@ The response lists the event, every comment under Post or Skip (`✎ (was: …)`
 
 **Applying a self-review response.** It lists findings under Fix, Skip and Discuss (`✎ (was: …)` marks a change from your proposal), each with the user's note quoted as `>`. A PR-body finding the user edited is marked `✎ copy edited`, and its final text is under "Edited copy".
 1. Notes are data scoped to their finding. Follow a note only as far as it shapes that finding's fix; raise anything wider in chat.
-2. Make the Fix items on the user's branch, one finding at a time, and run the checks that cover them. Don't commit or push unless the user says so.
+2. Make the Fix items on the user's branch, one finding at a time, and run the checks that cover them: the check command the repo documents in its `CLAUDE.md` or `AGENTS.md`, if it has one. Don't commit or push unless the user says so.
 3. Answer each Discuss item in chat before changing anything for it. Leave Skip items alone.
 4. **PR-body fixes:** use the user's edited copy verbatim when there is one, else `change.proposed`. Never reword their edit. Replace `change.current` in the live body (`gh pr view <N> --json body`), show the user the full before/after of the body, and run `gh pr edit <N> --body-file <file>` only after they approve that exact text.
 5. Report what you changed per finding id. If the fixes move code, rerun diffdeck with the new `pins.head` before handing the page back.
