@@ -1,0 +1,33 @@
+{
+  "kind": "drafts",
+  "title": "Follow-ups from the checkout retry review",
+  "drafts": [
+    {
+      "id": "issue-backoff",
+      "channel": "linear_issue",
+      "to": { "team": "Payments", "project": "Checkout reliability", "labels": ["bug", "checkout"] },
+      "title": "Honour retry_after on soft card declines",
+      "body": "## Problem\nSoft declines come back with `retry_after`, but `retryCharge` always waits 2 s.\n\n## Proposal\nWait `retry_after` when it's present, 2 s otherwise.\n\nFrom the review of acme/shop#42.",
+      "why": "Agreed in review; nobody owns it yet."
+    },
+    {
+      "id": "slack-thanks",
+      "channel": "slack_reply",
+      "to": { "thread": "https://acme.slack.com/archives/C0123/p1700000000000000" },
+      "context": "Sam: retry PR is up, would love eyes on it before Friday",
+      "body": "Reviewed! Two small comments, nothing blocking. Nice and tight :raised_hands:",
+      "decision": "manual",
+      "why": "A thread reply you'd likely rather post yourself."
+    },
+    {
+      "id": "email-vendor",
+      "channel": "email_reply",
+      "to": { "to": ["support@payments.example"] },
+      "context": "Hi, can you confirm which decline codes you treat as soft?",
+      "title": "Re: Soft decline codes",
+      "body": "Hi,\n\nWe treat 05, 51 and 61 as soft and retry once. Let us know if that matches your guidance.\n\nThanks",
+      "decision": "hold",
+      "why": "Needs the codes confirmed with the payments team first."
+    }
+  ]
+}
