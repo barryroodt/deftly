@@ -2,7 +2,8 @@
 /**
  * diffdeck: render a walkthrough JSON file to one self-contained HTML page, reading code with git
  * from the checkout it describes. Only `gh` PR lookups leave this machine. The output embeds code
- * excerpts, so treat the HTML as being as private as the code itself.
+ * excerpts, so treat the HTML as being as private as the code itself. A `"kind": "drafts"` file is
+ * a deck of editable drafts instead (drafts.ts) and needs no checkout.
  */
 import { parseArgs } from "node:util";
 import { basename, dirname, join } from "node:path";
@@ -11,9 +12,11 @@ import hljs from "highlight.js";
 import * as dagre from "@dagrejs/dagre";
 import { GITHUB_PR_URL, parseWalkthrough, type Block, type ColleagueReview, type ReviewItem, type SourceRange } from "./schema.ts";
 import { findPullRequest, githubSlug, gitSource, type PullRequest, type Side, type Source } from "./sources.ts";
-import { lineRefs, renderReview, renderSelfReview, reviewPayload, type LineRef } from "./review.ts";
+import { lineRefs, renderReview, renderSelfReview, reviewPayload, reviewToc, type LineRef } from "./review.ts";
 import { parsePatch, renderDiff, renderFiles, type DiffFile } from "./diff.ts";
 import { loadTheme } from "./theme.ts";
+import { deliver, esc, metaLine, pageHtml } from "./serve.ts";
+import { runDrafts } from "./drafts.ts";
 
 type BlockOf<T extends Block["type"]> = Extract<Block, { type: T }>;
 interface Ref { id: string; side: Side; file: string; from: number; to: number }
@@ -21,10 +24,12 @@ interface Ref { id: string; side: Side; file: string; from: number; to: number }
 interface LaidOutEdge { points: { x: number; y: number }[]; x: number; y: number; width: number; label?: string; style?: string }
 
 const USAGE = `usage: diffdeck <walkthrough.json> [--repo <checkout>] [--pr <url|number>] [--theme <dir>] [-o out.html] [--open] [--payload | --serve]
+       diffdeck <drafts.json> [--theme <dir>] [-o out.html] [--open] [--serve]
 
 Renders the walkthrough, reading code with git from --repo (default: the current checkout).
 The PR comes from --pr, then the document's pr.url, then gh (by branch, then by head commit).
-Default output: <walkthrough>.html next to the .json.
+A file with "kind": "drafts" renders a deck of editable drafts instead; it reads no git and no gh.
+Default output: <file>.html next to the .json.
 --theme <dir> uses <dir>/theme.css. Default: ~/.config/diffdeck/theme/theme.css if it exists,
 else the built-in theme.
 --payload validates the document's review and writes post-payload-<head sha8>.json (the body of
@@ -55,6 +60,13 @@ const fail = (lines: string[], hint: string): never => {
   console.error(lines.map((l) => `  ${l}`).join("\n") + `\n${hint}`);
   process.exit(1);
 };
+
+// A drafts file needs no checkout, so hand it over before anything reads git.
+const peek: unknown = await Bun.file(input).json().catch(() => undefined);
+if ((peek as { kind?: unknown } | undefined)?.kind === "drafts") {
+  if (values.repo || values.pr || values.payload) fail(["--repo / --pr / --payload"], "A drafts file has no code or PR; drop these flags.");
+  await runDrafts(peek, input, values, fail);
+}
 
 async function pool<T, R>(items: T[], size: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
@@ -155,9 +167,12 @@ function linkMentions(html: string): string {
 
 // ---------------------------------------------------------------- html helpers
 
-const esc = (s: unknown) =>
-  String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// esc comes from serve.ts, shared with the drafts page.
 const short = (sha?: string) => (sha ? sha.slice(0, 7) : "");
+const idAttr = (id?: string) => (id ? ` id="${esc(id)}"` : "");
+// Diagrams name their markers and drawer templates after their id, so one without an id gets its own.
+let figures = 0;
+const figureId = (id?: string) => id ?? `fig${++figures}`;
 
 const LANG: Record<string, string> = {
   ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript",
@@ -377,8 +392,14 @@ md.use({
       if (!r) return false;
       return `<a href="#${r.id}" class="src-link" data-ref="${r.id}">${this.parser.parseInline(token.tokens)}</a>`;
     },
+    code(token: Tokens.Code) {
+      const name = (token.lang ?? "").trim().split(/\s+/)[0]!.toLowerCase();
+      const lang = LANG[name] ?? name;
+      const html = lang && hljs.getLanguage(lang) ? hljs.highlight(token.text, { language: lang }).value : esc(token.text);
+      return `<pre class="hljs"><code>${html}</code></pre>\n`;
+    },
   },
-  hooks: { postprocess: linkMentions },
+  hooks: { postprocess: (html: string) => linkMentions(html.replaceAll("<table>", `<div class="table-scroll"><table>`).replaceAll("</table>", "</table></div>")) },
 });
 
 // ---------------------------------------------------------------- flow diagram (dagre → static SVG)
@@ -400,7 +421,21 @@ function wrap(text: string, charW: number, maxW: number): string[] {
 
 const templates: string[] = [];
 
+/** A smooth path through dagre's points; the last half-segment stays straight so the arrowhead points along it. */
+function edgePath(pts: { x: number; y: number }[]): string {
+  const at = (p: { x: number; y: number }) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+  if (pts.length < 3) return pts.map((p, i) => `${i ? "L" : "M"}${at(p)}`).join(" ");
+  let d = `M${at(pts[0]!)}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i]!;
+    const q = pts[i + 1]!;
+    d += ` Q${at(p)} ${at({ x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 })}`;
+  }
+  return `${d} L${at(pts.at(-1)!)}`;
+}
+
 function flowDiagram(n: BlockOf<"flow_diagram">): string {
+  const fid = figureId(n.id);
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: n.direction === "right" ? "LR" : "TB", nodesep: 28, ranksep: 46, edgesep: 14, marginx: 12, marginy: 12 });
   g.setDefaultEdgeLabel(() => ({}));
@@ -412,7 +447,8 @@ function flowDiagram(n: BlockOf<"flow_diagram">): string {
     const pad = node.kind === "decision" ? 44 : 24;
     meta.set(node.key, { label, desc, node });
     const hasCode = (node.attachments ?? []).some((a) => a.sources.length);
-    g.setNode(node.key, { width: Math.min(NODE_MAX_W + pad, textW + pad), height: label.length * 17 + desc.length * 15 + (desc.length ? 8 : 0) + (hasCode ? 32 : 20) });
+    // The "</> N code" badge needs room in a node with a short label.
+    g.setNode(node.key, { width: Math.max(Math.min(NODE_MAX_W + pad, textW + pad), hasCode ? 84 + pad : 0), height: label.length * 17 + desc.length * 15 + (desc.length ? 8 : 0) + (hasCode ? 32 : 20) });
   }
   for (const e of n.edges ?? []) {
     const lbl = e.label ? { label: e.label, width: e.label.length * 6.4 + 10, height: 18, labelpos: "c" } : {};
@@ -425,9 +461,7 @@ function flowDiagram(n: BlockOf<"flow_diagram">): string {
   for (const e of g.edges()) {
     // dagre's GraphEdge type omits the custom fields passed to setEdge.
     const ed = g.edge(e) as unknown as LaidOutEdge;
-    const pts = ed.points;
-    const d = pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-    edges += `<path class="edge${ed.style === "dashed" ? " dashed" : ""}" d="${d}" marker-end="url(#arrow-${n.id})"/>`;
+    edges += `<path class="edge${ed.style === "dashed" ? " dashed" : ""}" d="${edgePath(ed.points)}" marker-end="url(#arrow-${esc(fid)})"/>`;
     if (ed.label) {
       edges += `<g class="edge-label"><rect x="${ed.x - ed.width / 2}" y="${ed.y - 9}" width="${ed.width}" height="18" rx="4"/>
         <text x="${ed.x}" y="${ed.y + 4}" text-anchor="middle">${esc(ed.label)}</text></g>`;
@@ -453,23 +487,25 @@ function flowDiagram(n: BlockOf<"flow_diagram">): string {
     for (const l of m.desc) text += `<text class="nd" x="${x}" y="${ty - 2}" text-anchor="middle">${esc(l)}</text>`, (ty += 15);
     const attachments = m.node.attachments ?? [];
     const count = attachments.reduce((s, a) => s + a.sources.length, 0);
-    const tid = `node-${n.id}-${key}`;
-    const badge = count ? `<text class="badge" x="${left + w - 8}" y="${top + h - 7}" text-anchor="end">&lt;/&gt; ${count} code</text>` : "";
-    nodes += `<g class="fnode kind-${esc(kind)}${count ? " has-code" : ""}"${count ? ` data-tpl="${tid}" tabindex="0" role="button"` : ""}>${shape}${text}${badge}</g>`;
+    const tid = `node-${fid}-${key}`;
+    // A decision's corners slant inwards, so its badge sits further from the edge.
+    const badge = count ? `<text class="badge" x="${left + w - (kind === "decision" ? 22 : 8)}" y="${top + h - 7}" text-anchor="end">&lt;/&gt; ${count} code</text>` : "";
+    nodes += `<g class="fnode kind-${esc(kind)}${count ? " has-code" : ""}"${count ? ` data-tpl="${esc(tid)}" tabindex="0" role="button" aria-label="${esc(`${m.node.label}: show code`)}"` : ""}>${shape}${text}${badge}</g>`;
     if (count) {
       const body = attachments.map((a) => a.sources.map((s) => codeBlock(rangeRef(s), a.label)).join("")).join("");
       const head = `<h3>${esc(m.node.label)}</h3>${m.node.description ? `<p>${esc(m.node.description)}</p>` : ""}`;
-      templates.push(`<template id="${tid}">${head}${body}</template>`);
+      templates.push(`<template id="${esc(tid)}">${head}${body}</template>`);
     }
   }
 
-  return `<figure class="flow" id="${esc(n.id)}">
+  const hasCode = n.nodes.some((node) => (node.attachments ?? []).some((a) => a.sources.length));
+  return `<figure class="flow" id="${esc(fid)}">
     ${n.title ? `<figcaption>${esc(n.title)}</figcaption>` : ""}${n.description ? `<p class="figure-desc">${esc(n.description)}</p>` : ""}
     <div class="flow-scroll"><svg viewBox="0 0 ${width} ${height}" style="max-width:${width}px" role="img" aria-label="${esc(n.title ?? "flow diagram")}">
-      <defs><marker id="arrow-${n.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <defs><marker id="arrow-${esc(fid)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       ${edges}${nodes}
     </svg></div>
-    <p class="hint">Click a node with &lt;/&gt; to see its code.</p>
+    ${hasCode ? `<p class="hint">Click a node with &lt;/&gt; to see its code.</p>` : ""}
   </figure>`;
 }
 
@@ -503,7 +539,7 @@ function callStackDiff(n: BlockOf<"call_stack_diff">): string {
       .join("");
   };
 
-  return `<figure class="callstack" id="${esc(n.id)}">
+  return `<figure class="callstack"${idAttr(n.id)}>
     ${n.title ? `<figcaption>${esc(n.title)}</figcaption>` : ""}
     <div class="stacks">
       <div><h4>Before <span class="side base">base${pins.base ? ` · ${short(pins.base)}` : ""}</span></h4>${column(n.base, headByKey, "base")}</div>
@@ -515,6 +551,7 @@ function callStackDiff(n: BlockOf<"call_stack_diff">): string {
 // ---------------------------------------------------------------- sequence diagram
 
 function sequenceDiagram(n: BlockOf<"sequence">): string {
+  const fid = figureId(n.id);
   const actors = Object.entries(n.actors);
   const steps = n.steps;
   const COL_W = 180;
@@ -550,23 +587,24 @@ function sequenceDiagram(n: BlockOf<"sequence">): string {
     const anchor = x1 === x2 ? "start" : "middle";
     const label = `<text class="seq-label" x="${labelX}" y="${x1 === x2 ? y + 4 : y - 7}" text-anchor="${anchor}"><tspan class="seq-no">${i + 1}.</tspan> ${esc(s.label)}</text>`;
     if (!s.source && !s.explanation) {
-      svg += `<g class="seq-step"><path class="${cls}" d="${path}" marker-end="url(#arrow-${n.id})"/>${label}</g>`;
+      svg += `<g class="seq-step"><path class="${cls}" d="${path}" marker-end="url(#arrow-${esc(fid)})"/>${label}</g>`;
       return;
     }
-    const tid = `step-${n.id}-${i}`;
+    const tid = `step-${esc(fid)}-${i}`;
     const hit = `<rect class="hit" x="${Math.min(x1, x2) - 10}" y="${y - 22}" width="${Math.max(Math.abs(x2 - x1), 60) + 20}" height="34"/>`;
-    svg += `<g class="seq-step has-code" data-tpl="${tid}" tabindex="0" role="button">${hit}<path class="${cls}" d="${path}" marker-end="url(#arrow-${n.id})"/>${label}</g>`;
+    svg += `<g class="seq-step has-code" data-tpl="${tid}" tabindex="0" role="button">${hit}<path class="${cls}" d="${path}" marker-end="url(#arrow-${esc(fid)})"/>${label}</g>`;
     const explanation = s.explanation ? `<div class="md">${md.parse(s.explanation) as string}</div>` : "";
     templates.push(`<template id="${tid}"><h3>${i + 1}. ${esc(s.label)}</h3><p>${esc(n.actors[s.from] ?? s.from)} → ${esc(n.actors[s.to] ?? s.to)}</p>${explanation}${s.source ? codeBlock(rangeRef(s.source)) : ""}</template>`);
   });
 
-  return `<figure class="flow sequence" id="${esc(n.id)}">
+  const hasDetail = steps.some((s) => s.source || s.explanation);
+  return `<figure class="flow sequence" id="${esc(fid)}">
     ${n.title ? `<figcaption>${esc(n.title)}</figcaption>` : ""}
     <div class="flow-scroll"><svg viewBox="0 0 ${width} ${height}" style="max-width:${width}px" role="img" aria-label="${esc(n.title ?? "sequence diagram")}">
-      <defs><marker id="arrow-${n.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <defs><marker id="arrow-${esc(fid)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       ${svg}
     </svg></div>
-    <p class="hint">Click a step to see its code.</p>
+    ${hasDetail ? `<p class="hint">Click a step to see its code.</p>` : ""}
   </figure>`;
 }
 
@@ -588,9 +626,9 @@ function render(nodes: Block[], depth: number): string {
           return `<section id="${esc(id)}"${depth === 0 ? ` class="chapter"` : ""}><h${h}>${linkMentions(esc(n.title))}${done}</h${h}>${render(n.children, depth + 1)}</section>`;
         }
         case "markdown":
-          return `<div class="md" id="${esc(n.id)}">${md.parse(n.markdown) as string}</div>`;
+          return `<div class="md"${idAttr(n.id)}>${md.parse(n.markdown) as string}</div>`;
         case "code_peek":
-          return `<div id="${esc(n.id)}">${codeBlock(rangeRef(n.source), n.caption)}</div>`;
+          return `<div${idAttr(n.id)}>${codeBlock(rangeRef(n.source), n.caption)}</div>`;
         case "flow_diagram":
           return flowDiagram(n);
         case "call_stack_diff":
@@ -624,10 +662,6 @@ const tabs: [name: string, label: string, html: string][] = [
 ];
 for (const r of refs.values()) templates.push(`<template id="tpl-${r.id}">${codeBlock(r)}</template>`);
 
-const read = (...path: string[]) => Bun.file(join(import.meta.dir, ...path)).text();
-const css = await read("page.css");
-const js = await read("page.js");
-
 const prState = pr?.state === "OPEN" && pr.isDraft ? "draft" : pr?.state?.toLowerCase();
 const prBanner = pr
   ? `<a class="pr-banner" href="${esc(pr.url)}" target="_blank" rel="noopener">
@@ -641,78 +675,37 @@ const prBanner = pr
 const prMoved = prHead
   ? `<div class="pr-moved">The PR head is <code>${short(prHead)}</code>, but this page is pinned to <code>${short(pins.head)}</code>. Re-pin and rerun to see the latest commits.</div>`
   : "";
-const meta = [
-  doc.origin?.branch && `<span>branch <code>${esc(doc.origin.branch)}</code></span>`,
-  pins && `<span><code>${short(pins.base)}</code> → <code>${short(pins.head)}</code></span>`,
-  `<span>exported ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC</span>`,
-  `<button class="theme-toggle" type="button" aria-label="Toggle light and dark theme">theme</button>`,
-]
-  .filter(Boolean)
-  .join("");
-
-const html = `<!doctype html>
-<html lang="en" data-theme="dark">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="diffdeck (${esc(source.label)})">
-<title>${pr ? `#${pr.number} · ` : ""}${esc(doc.title)}</title>
-<script>(() => { let t; try { t = localStorage.getItem("dd-theme"); } catch {} document.documentElement.dataset.theme = t || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"); })();</script>
-<style>${theme.css}
-${css}</style>
-</head>
-<body data-doc-key="${esc(`dd-reviewed:${prUrlRepo ?? repository ?? doc.title}#${pr?.number ?? ""}:${pins.head}`)}"${review ? ` data-review-key="${esc(`dd-${review.kind === "self" ? "self" : "review"}:${prUrlRepo ?? repository ?? doc.title}#${pr?.number ?? ""}:${pins.head}`)}" data-review-title="${esc(`${prUrlRepo ?? repository ?? ""}${pr ? `#${pr.number}` : ""}`)} @ ${short(pins.head)}"` : ""}>
-<nav class="toc"><div class="toc-title">Contents</div>${toc
-  .map((t) => `<a href="#${esc(t.id)}" style="--depth:${t.depth}">${esc(t.title)}</a>`)
-  .join("")}</nav>
-<main>
-<header>${prBanner}${prMoved}<h1>${linkMentions(esc(doc.title))}</h1><div class="meta">${meta}</div>${
-  tabs.length > 1
-    ? `<div class="tabs" role="tablist">${tabs.map(([name, label], i) => `<button type="button" role="tab" data-tab="${name}" aria-selected="${i === 0}">${esc(label)}</button>`).join("")}</div>`
-    : ""
-}</header>
-${tabs.length > 1 ? tabs.map(([name, , html], i) => `<div class="tab-panel" data-panel="${name}"${i ? " hidden" : ""}>${html}</div>`).join("") : body}
-</main>
-<aside class="drawer" aria-hidden="true"><button class="drawer-close" aria-label="Close">×</button><div class="drawer-body"></div></aside>
-${templates.join("\n")}
-<script>${js}</script>
-</body>
-</html>
-`;
+const html = await pageHtml({
+  title: `${pr ? `#${pr.number} · ` : ""}${doc.title}`,
+  source: source.label,
+  themeCss: theme.css,
+  bodyAttrs: ` data-doc-key="${esc(`dd-reviewed:${prUrlRepo ?? repository ?? doc.title}#${pr?.number ?? ""}:${pins.head}`)}"${review ? ` data-review-key="${esc(`dd-${review.kind === "self" ? "self" : "review"}:${prUrlRepo ?? repository ?? doc.title}#${pr?.number ?? ""}:${pins.head}`)}" data-review-title="${esc(`${prUrlRepo ?? repository ?? ""}${pr ? `#${pr.number}` : ""}`)} @ ${short(pins.head)}"` : ""}`,
+  toc,
+  // The contents follow the open tab: chapters, then the review's cards, then the diff's files.
+  tabTocs: {
+    ...(review ? { review: reviewToc(review) } : {}),
+    ...(doc.diff ? { diff: diffFiles.map((f, i) => ({ id: `diff-${i}`, title: f.path.split("/").pop()!, depth: 0, tip: f.path })) } : {}),
+  },
+  header: `${prBanner}${prMoved}<h1>${linkMentions(esc(doc.title))}</h1><div class="meta">${metaLine([
+    doc.origin?.branch && `<span>branch <code>${esc(doc.origin.branch)}</code></span>`,
+    `<span><code>${short(pins.base)}</code> → <code>${short(pins.head)}</code></span>`,
+  ])}</div>${
+    tabs.length > 1
+      ? `<div class="tabs" role="tablist">${tabs.map(([name, label], i) => `<button type="button" role="tab" id="tab-${name}" data-tab="${name}" aria-selected="${i === 0}" aria-controls="panel-${name}"${i ? ` tabindex="-1"` : ""}>${esc(label)}</button>`).join("")}</div>`
+      : ""
+  }`,
+  main: tabs.length > 1 ? tabs.map(([name, , html], i) => `<div class="tab-panel" role="tabpanel" id="panel-${name}" aria-labelledby="tab-${name}" data-panel="${name}"${i ? " hidden" : ""}>${html}</div>`).join("") : body,
+  templates: templates.join("\n"),
+});
 
 // Files start with "<repo>-<pr number>-" (e.g. mcp-427-…) so they sort and match by PR; just "<repo>-" without a PR.
 const repoName = (prUrlRepo ?? repository)?.split("/")[1];
 const prefix = [repoName, pr?.number].filter(Boolean).join("-");
 const withPrefix = (name: string) => (!prefix || name.startsWith(`${prefix}-`) ? name : `${prefix}-${name.startsWith(`${repoName}-`) ? name.slice(repoName!.length + 1) : name}`);
 const outPath = values.out ?? join(dirname(input), withPrefix(basename(input, ".json")) + ".html");
-await Bun.write(outPath, html);
-console.error(`wrote ${outPath} (${(html.length / 1024).toFixed(0)} KB, ${refs.size} code refs from ${files.size} files)`);
-if (!values.serve) {
-  console.log(outPath);
-  if (values.open) Bun.spawnSync(["open", outPath]);
-} else {
-  // Serve the page and wait for "Send to agent". The response is the only stdout, so an agent that
-  // runs this as a background job gets the user's response as the job's result.
-  // The token travels in a custom header: other sites can't send it without a CORS preflight, which
-  // this server never answers. The Host check stops DNS rebinding from reading the page and its token.
-  const token = crypto.randomUUID();
-  const served = html.replace("<body ", `<body data-send-token="${token}" `);
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    async fetch(req) {
-      const url = new URL(req.url);
-      if (url.hostname !== "127.0.0.1") return new Response("forbidden", { status: 403 });
-      if (req.method === "GET" && url.pathname === "/") return new Response(served, { headers: { "content-type": "text/html; charset=utf-8" } });
-      if (req.method !== "POST" || url.pathname !== "/send") return new Response("not found", { status: 404 });
-      if (req.headers.get("x-dd-token") !== token) return new Response("forbidden", { status: 403 });
-      const text = await req.text();
-      process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
-      // Answer first, then stop: the page shows "Sent" from this response.
-      setTimeout(() => process.exit(0), 100);
-      return new Response("ok");
-    },
-  });
-  console.error(`serving ${server.url.href}; waiting for "Send to agent" (Ctrl-C stops without a response)`);
-  if (values.open) Bun.spawnSync(["open", server.url.href]);
-}
+await deliver(html, outPath, {
+  serve: values.serve,
+  open: values.open,
+  detail: `, ${refs.size} code refs from ${files.size} files`,
+  waiting: { label: `${prUrlRepo ?? repository ?? doc.title}${pr ? `#${pr.number}` : ""}`, kind: review?.kind === "self" ? "self" : "colleague" },
+});

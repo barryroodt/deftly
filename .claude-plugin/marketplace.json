@@ -9,6 +9,11 @@
       "source": ".",
       "description": "Agent Skills authored by Barry Roodt.",
       "skills": "./skills"
+    },
+    {
+      "name": "diffdeck-mod",
+      "source": "./skills/diffdeck/mod",
+      "description": "Claude Code mod for diffdeck: shows pages waiting for Send to agent above the prompt, and /diffdeck-pages opens recent pages."
     }
   ]
 }

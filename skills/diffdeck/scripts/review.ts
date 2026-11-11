@@ -4,7 +4,8 @@
  * round; diffdeck never posts. A self-review lists findings on the reader's own PR, each with a
  * Fix / Skip / Discuss decision and a note for the agent; nothing in it is ever posted.
  */
-import type { ColleagueReview, ReviewItem, SelfReview } from "./schema.ts";
+import type { ColleagueReview, Review, ReviewItem, SelfReview } from "./schema.ts";
+import type { TocEntry } from "./serve.ts";
 
 /** A `file.ts:12` or `:12-20` mention in comment text, resolved to a repo path. */
 export interface LineRef { text: string; path: string; from: number; to: number }
@@ -94,8 +95,23 @@ function byTheme<T extends { id: string; theme?: string }>(items: T[]) {
   const ordered = themes.flatMap((t) => items.filter((c) => (c.theme ?? "") === t));
   const number = new Map(ordered.map((c, i) => [c.id, i + 1]));
   const groups = (card: (c: T) => string) =>
-    themes.map((t) => `${t ? `<h3>${t.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`)}</h3>` : ""}${items.filter((c) => (c.theme ?? "") === t).map(card).join("\n")}`).join("\n");
-  return { ordered, number, groups };
+    themes.map((t, i) => `${t ? `<h3 id="rv-theme-${i}">${t.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`)}</h3>` : ""}${items.filter((c) => (c.theme ?? "") === t).map(card).join("\n")}`).join("\n");
+  return { themes, ordered, number, groups };
+}
+
+/** The contents for the Review tab: the body, then each theme with its cards, then what was held out. */
+export function reviewToc(r: Review): TocEntry[] {
+  const items: { id: string; theme?: string; target?: string; path?: string; line?: number }[] = r.kind === "self" ? r.findings : r.comments;
+  const { themes, number } = byTheme(items);
+  const entry = (c: (typeof items)[number], depth: number): TocEntry =>
+    c.target === "pr_body"
+      ? { id: `rv-${c.id}`, title: `${number.get(c.id)} · PR body`, depth }
+      : { id: `rv-${c.id}`, title: `${number.get(c.id)} · ${c.path!.split("/").pop()}:${c.line}`, depth, tip: `${c.path}:${c.line}` };
+  return [
+    ...(r.kind === "colleague" ? [{ id: "rv-body", title: "Review body", depth: 0 }] : []),
+    ...themes.flatMap((t, i) => [...(t ? [{ id: `rv-theme-${i}`, title: t, depth: 0 }] : []), ...items.filter((c) => (c.theme ?? "") === t).map((c) => entry(c, t ? 1 : 0))]),
+    ...(r.held_out?.length ? [{ id: "rv-held", title: "Held out", depth: 0 }] : []),
+  ];
 }
 
 /** Line refs in an item's text as chips that open the code; a ref outside its file shows as a warning chip. */
@@ -113,7 +129,7 @@ function refChips(id: string, refsById: Map<string, LineRef[]>, x: RenderContext
 }
 
 const heldOut = (items: string[] | undefined, x: RenderContext, note: string) =>
-  items?.length ? `<section class="rv-held"><h2>Held out</h2><p class="rv-note">${note}</p><div class="md"><ul>${items.map((h) => `<li>${x.markdown(h)}</li>`).join("")}</ul></div></section>` : "";
+  items?.length ? `<section class="rv-held" id="rv-held"><h2>Held out</h2><p class="rv-note">${note}</p><div class="md"><ul>${items.map((h) => `<li>${x.markdown(h)}</li>`).join("")}</ul></div></section>` : "";
 
 /**
  * The colleague Review tab. Originals go into a JSON block so page.js can diff edits and build the
@@ -126,7 +142,7 @@ export function renderReview(r: ColleagueReview, refsById: Map<string, LineRef[]
 
   const card = (c: ColleagueReview["comments"][number]) => {
     const chips = refChips(c.id, refsById, x);
-    return `<article class="rv-card" data-key="${x.esc(c.id)}">
+    return `<article class="rv-card" id="rv-${x.esc(c.id)}" data-key="${x.esc(c.id)}">
       <header class="rv-head">
         <label class="rv-post"><input type="checkbox" data-post="${x.esc(c.id)}"${c.post ? " checked" : ""}${ro}>
           <b>${number.get(c.id)}</b> · <code>${x.esc(c.path)}:${c.line}</code></label>
@@ -159,7 +175,7 @@ export function renderReview(r: ColleagueReview, refsById: Map<string, LineRef[]
   return `<div class="review">
     ${banner}
     ${r.verdict ? `<section class="rv-verdict"><h2>AI review</h2><div class="md">${x.markdown(r.verdict)}</div></section>` : ""}
-    <section class="rv-card rv-body" data-key="body">
+    <section class="rv-card rv-body" id="rv-body" data-key="body">
       <header class="rv-head"><span class="rv-title">Review body</span>
         <span class="rv-flag" hidden>edited</span><button type="button" class="rv-revert" hidden>Revert</button>
         <span class="rv-status${live ? " posted" : ""}">${live ? "Posted" : "Not posted"}</span></header>
@@ -202,7 +218,7 @@ export function renderSelfReview(r: SelfReview, refsById: Map<string, LineRef[]>
         ${editable ? `<textarea class="sr-edit-box" data-proposed="${x.esc(f.id)}" spellcheck="true" hidden>${x.esc(f.change.proposed)}</textarea>` : ""}
       </div></div>`;
   };
-  const card = (f: SelfReview["findings"][number]) => `<article class="rv-card sr-card" data-key="${x.esc(f.id)}" data-decision="${f.decision}">
+  const card = (f: SelfReview["findings"][number]) => `<article class="rv-card sr-card" id="rv-${x.esc(f.id)}" data-key="${x.esc(f.id)}" data-decision="${f.decision}">
       <header class="rv-head"><span class="rv-post"><b>${number.get(f.id)}</b> · ${f.target === "pr_body" ? `<span class="pill sr-target">PR body</span>` : `<code>${x.esc(where(f))}</code>`}</span>
         <span class="rv-flag" hidden>changed</span></header>
       <div class="md sr-body">${x.markdown(f.body)}</div>

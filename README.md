@@ -19,6 +19,8 @@ The skills.sh CLI installs every skill under `skills/` into your configured agen
 /plugin install deftly@deftly
 ```
 
+In Claude Code, `/plugin install diffdeck-mod@deftly` also adds a band above the prompt for diffdeck pages waiting on Send to agent, and `/diffdeck-pages` to open waiting and recent pages.
+
 ## Skills
 
 This index lists every skill in `skills/`. Update it whenever you add or remove a skill.
@@ -27,6 +29,7 @@ This index lists every skill in `skills/`. Update it whenever you add or remove 
 | ----- | ----------- |
 | [`agent-team-review`](./skills/agent-team-review/) | Parallel multi-agent code review using Agent Teams. |
 | [`diffdeck`](./skills/diffdeck/) | Renders a PR or branch walkthrough as a private, self-contained HTML page, with an optional review tab whose response goes straight back to the agent. Themeable to your own design system. |
+| [`diffdeck-drafts`](./skills/diffdeck-drafts/) | Shows drafts for colleagues (Linear issues, Slack messages, emails) as editable cards in one page; you edit, pick who posts each, and send your choices back to the agent. Needs `diffdeck`. |
 | [`show-your-work`](./skills/show-your-work/) | Proof-backed completion with machine-checked plans, bounded rolling dispatch, exact parent verification, and honest handover. Inspired by Leonxlnx/unlazy. |
 | [`solo-agents-facilitator`](./skills/solo-agents-facilitator/) | Manually enters a Solo control-plane role that selects a project, confirms orchestrator runtimes, delegates outcomes, and relays decisions, evidence, feedback, and status. |
 | [`scaffold-project-workspace`](./skills/scaffold-project-workspace/) | Bootstraps a multi-repo project workspace from a Linear project — clones repos, generates per-repo skills, writes permissions, produces architecture docs. |

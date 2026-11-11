@@ -1,0 +1,6 @@
+{
+  "name": "diffdeck-mod",
+  "version": "0.1.0",
+  "description": "Claude Code mod for diffdeck: shows pages waiting for Send to agent above the prompt, and /diffdeck-pages opens recent pages.",
+  "author": { "name": "Barry Roodt" }
+}

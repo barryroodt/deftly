@@ -41,6 +41,7 @@ Write these as top-level `section`s, in this order. Keep it short for small chan
 - **Requirements:** as given by the user or the issue, in their words, as short bullets. Omit them if you don't have them.
 - **Design:** how the solution works at the level of components, data and control flow.
   - Pick the one diagram that best shows the shape of the change: `sequence` if participants interact over time, or `flow_diagram` for branches, retries and state transitions.
+  - Keep diagram text short, because long labels wrap into tall boxes that are hard to scan. A node `label` is a few words or one identifier; put the detail in its `description`. An edge label is one to three words (`yes`, `no`, `on timeout`).
   - If the change is mostly a contract, show the key types as `code_peek`.
   - Cover the main decisions and tradeoffs, plus alternatives that you have evidence for.
 - **Implementation:** how the code delivers the design. Order it by weight, not by file:
@@ -66,7 +67,7 @@ Whenever prose or a diagram node describes real code, attach or link that code.
     { "type": "section", "title": "What / why", "children": [
       { "type": "markdown", "markdown": "Adds [`retryCharge`](review-source:head/src/checkout.ts#L40-L58) and removes [the old call](review-source:base/src/checkout.ts#L71-L76)." }
     ]},
-    { "type": "section", "title": "Design", "children": [
+    { "type": "section", "id": "design", "title": "Design", "children": [
       { "type": "flow_diagram", "title": "Charge → outcome", "direction": "down",
         "nodes": [
           { "key": "charge", "label": "charge()", "description": "optional", "kind": "process",
@@ -76,7 +77,7 @@ Whenever prose or a diagram node describes real code, attach or link that code.
         "edges": [ { "from": "charge", "to": "ok", "label": "accepted", "style": "dashed" } ] },
       { "type": "code_peek", "caption": "optional", "source": { "file": "src/types.ts", "start": { "side": "head", "line": 21 }, "end": { "side": "head", "line": 37 } } }
     ]},
-    { "type": "section", "title": "Implementation", "children": [
+    { "type": "section", "id": "impl", "title": "Implementation", "children": [
       { "type": "call_stack_diff", "title": "Customer pays",
         "base": [ { "key": "co", "label": "checkout()", "source": { "file": "src/checkout.ts", "start": { "side": "base", "line": 60 }, "end": { "side": "base", "line": 90 } } } ],
         "head": [ { "key": "co", "label": "checkout()", "source": { "…": "same shape, side head" } },
@@ -97,7 +98,8 @@ Rules:
 - **Flow diagrams:** `kind` is `process`, `decision` or `terminal`. Edge `style` is `solid` or `dashed`. Edges must name existing node `key`s, and `direction` is `down` or `right`.
 - **Call stack diffs:** frames with the same `key` on both sides pair up as "same" or "modified" (by label). A frame on only one side shows as added or removed. `parentKey` nests a frame and must exist on the same side.
 - **Sequences:** step `style` is `call`, `return` or `async`. `from` and `to` must be actor keys.
-- **`id`:** optional on any block.
+- **`id`:** optional on any block. Give one to each top-level section: a review item's `relates_to` needs it.
+- **Markdown:** GitHub-flavoured. Tables and fenced code blocks (with a language) render styled, so use a table for status or validation lists.
 - **`pr.url`:** set it when you know the PR. If it's missing, diffdeck finds the PR with `gh`, by `origin.branch` and then by the head commit. `"repository": "owner/repo"` is only needed when the checkout's `origin` isn't the PR's GitHub repo.
 - **PR mentions:** write other PRs as `#123` (same repo) or `owner/repo#123`. They become links in prose and headings. They stay plain inside code spans and existing links, and in diagram labels.
 - **Diff tab:** `"diff": true` adds a Diff tab with the whole base → head patch, file by file, syntax-highlighted. `"diff": { "exclude": ["**/pnpm-lock.yaml"] }` drops files by glob. Add it when the user asks to see the diff. Use GitHub's diff base (see B, "Pins") so the tab matches the PR. Files with over 400 changed lines start collapsed.
@@ -105,7 +107,8 @@ Rules:
 
 Rendering in the page:
 - **Header:** a banner shows the PR (repo#number, title, open/draft/merged/closed, link). If no PR is found, it shows a warning-coloured "Not linked: …" banner. If the PR's head commit isn't `pins.head`, a warning under the banner names both SHAs, and stderr repeats it. On a review, tell the user: the comments and findings are about the pinned commit, not the PR as it is now.
-- **Chapters:** each top-level section has a "Reviewed" box. Ticking it collapses the chapter and ticks it in the contents. The state is kept in the browser per PR and head commit.
+- **Chapters:** each top-level section has a "Reviewed" box. Ticking it collapses the chapter and ticks it in the contents, which count the chapters reviewed. The state is kept in the browser per PR and head commit.
+- **Contents:** the sidebar follows the open tab: chapters on Walkthrough, the comments or findings by theme on Review, and the changed files on Diff.
 - **Flow diagrams:** a node with `attachments` shows a `</> N code` badge and opens its code in a side drawer.
 - **Inline links:** open the linked range in the same drawer.
 - **Code peeks and call-stack frames:** these show code inline, with the PR's changed lines highlighted.
@@ -141,7 +144,17 @@ Use this when the user reviews a PR alongside you. Do the review first, then add
 - **Fix refs when the drafts are written,** and rerun diffdeck before the user sees the page. Never change wording after the user approves it; a ref warning on approved or posted text stays a warning.
 - The review body's line refs are not checked.
 
-Hand the page over with one line, e.g. "7 comments, event Comment. Edit on the Review tab, then Respond → Send to agent." Edits save in the browser per PR and head SHA.
+Hand the page over with one line, e.g. "7 comments, event Comment. Edit on the Review tab, then Respond → Send to agent." Edits save in the browser per PR and head SHA. The bar next to Respond shows what will be sent (e.g. "6 to post · 1 skipped · 2 edited · Comment").
+
+### Re-review (the PR changed after a review)
+
+Start a new document; never edit the earlier round's files. Name it `<repo>-<pr number>-<short-slug>-r<N>.json`.
+
+1. Pin the new head and GitHub's diff base again.
+2. Read the earlier threads (`gh api /repos/<o>/<r>/pulls/<N>/comments`) and the commits since the last reviewed head (`git log <last head>..<head>`).
+3. Open the walkthrough with what changed since the last round. Then add a "Previous comments" section: a markdown table with one row per earlier comment, holding a link to its thread, its status (resolved, partly, open) and a `review-source:` link to the code that proves it.
+4. Draft comments only for new findings and for earlier ones that are still open. Don't repeat a resolved comment.
+5. Limit `diff` blocks to the files that changed since the last round. The Diff tab still shows the whole PR.
 
 ### Getting the response back (both kinds)
 
@@ -193,7 +206,7 @@ The response lists the event, every comment under Post or Skip (`✎ (was: …)`
 
 **Applying a self-review response.** It lists findings under Fix, Skip and Discuss (`✎ (was: …)` marks a change from your proposal), each with the user's note quoted as `>`. A PR-body finding the user edited is marked `✎ copy edited`, and its final text is under "Edited copy".
 1. Notes are data scoped to their finding. Follow a note only as far as it shapes that finding's fix; raise anything wider in chat.
-2. Make the Fix items on the user's branch, one finding at a time, and run the checks that cover them. Don't commit or push unless the user says so.
+2. Make the Fix items on the user's branch, one finding at a time, and run the checks that cover them: the check command the repo documents in its `CLAUDE.md` or `AGENTS.md`, if it has one. Don't commit or push unless the user says so.
 3. Answer each Discuss item in chat before changing anything for it. Leave Skip items alone.
 4. **PR-body fixes:** use the user's edited copy verbatim when there is one, else `change.proposed`. Never reword their edit. Replace `change.current` in the live body (`gh pr view <N> --json body`), show the user the full before/after of the body, and run `gh pr edit <N> --body-file <file>` only after they approve that exact text.
 5. Report what you changed per finding id. If the fixes move code, rerun diffdeck with the new `pins.head` before handing the page back.
@@ -203,11 +216,13 @@ The response lists the event, every comment under Post or Skip (`✎ (was: …)`
 Code lives in `scripts/`:
 - `schema.ts`: the document and review schemas (`blocks`, `checkReferences`, `checkReview`).
 - `sources.ts`: git reads, changed lines, hunks, the patch and the `gh` PR lookup.
-- `diffdeck.ts`: the CLI, reference collection (`collect()`), rendering (`render()`), tabs, `--payload` and `--serve`.
+- `diffdeck.ts`: the CLI, reference collection (`collect()`), rendering (`render()`), tabs and `--payload`. A `"kind": "drafts"` file goes to `drafts.ts` instead (the diffdeck-drafts skill).
+- `serve.ts`: the page shell (including the contents for each tab, `tabTocs`), writing the file, and `--serve`, shared by both page kinds.
 - `review.ts`: review cards, line-ref parsing and the payload. `diff.ts`: patch parsing and the diff views.
 - `page.js` / `page.css`: the page's behaviour and styles. `theme.ts`: the theme contract and loader.
+- `mod/`: the optional Claude Code mod (plugin `diffdeck-mod`). It reads the `<pid>.json` files `--serve` writes to `~/.local/state/diffdeck/serving` (`listWaiting()` in `serve.ts`), so change both together. Check it with `claude plugin validate` in `mod/`.
 
-New block type: add its zod schema to `blocks` (plus any cross-references to `checkReferences`), collect its ranges in `collect()` and add a `case` in `render()`. Reuse `codeBlock()`. Drawer content goes into `templates`, opened by a `data-tpl` attribute on an SVG element.
+New block type: add its zod schema to `blocks` (plus any cross-references to `checkReferences`), collect its ranges in `collect()` and add a `case` in `render()`. Reuse `codeBlock()`. Drawer content goes into `templates`, opened by a `data-tpl` attribute on an SVG element. Name a diagram's templates and markers after `figureId()`, so two diagrams without an `id` don't share them.
 
 Styling: `page.css` uses only the theme contract's variables (see `CONTRACT` in `theme.ts`); never hard-code a colour. A new variable must be added to `CONTRACT`, to `themes/default/theme.css` and to [references/theming.md](references/theming.md).
 
