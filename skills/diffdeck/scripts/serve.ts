@@ -79,9 +79,10 @@ export interface Waiting { label: string; kind: "colleague" | "self" | "drafts" 
  * result. `detail` goes after the size in the "wrote" line.
  */
 export async function deliver(html: string, outPath: string, o: { serve?: boolean; open?: boolean; detail?: string; waiting: Waiting }): Promise<void> {
-  await Bun.write(outPath, html);
-  console.error(`wrote ${outPath} (${(html.length / 1024).toFixed(0)} KB${o.detail ?? ""})`);
+  const wrote = () => console.error(`wrote ${outPath} (${(html.length / 1024).toFixed(0)} KB${o.detail ?? ""})`);
   if (!o.serve) {
+    await Bun.write(outPath, html);
+    wrote();
     console.log(outPath);
     if (o.open) Bun.spawnSync(["open", outPath]);
     return;
@@ -106,6 +107,10 @@ export async function deliver(html: string, outPath: string, o: { serve?: boolea
       return new Response("ok");
     },
   });
+  // Only the served copy can send. The file copy points at it, so a reader who opens the file
+  // (an agent's handoff often names the path) is sent on to the live page; page.js does the redirect.
+  await Bun.write(outPath, html.replace("<body ", `<body data-serve-url="${esc(server.url.href)}" `));
+  wrote();
   console.error(`serving ${server.url.href}; waiting for "Send to agent" (Ctrl-C stops without a response)`);
   listWaiting(server.url.href, outPath, o.waiting);
   if (o.open) Bun.spawnSync(["open", server.url.href]);
