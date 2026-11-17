@@ -615,3 +615,20 @@ async function copyText(text, fallbackField) {
     return [`${count("post")} for the agent`, `${count("manual")} for you`, `${count("hold")} on hold`, changed && `${changed} edited`].filter(Boolean).join(" · ");
   });
 })();
+
+/** Under `diffdeck --serve`, only the served copy can send. The written file names the live page, so
+ *  opening the file goes on to it; once that server has stopped, say so instead of failing at Send. */
+(function liveCopy() {
+  const url = document.body.dataset.serveUrl;
+  if (!url || document.body.dataset.sendToken || location.protocol !== "file:") return;
+  // An opaque no-cors response is enough: it only shows that something answers on that address.
+  fetch(url, { mode: "no-cors", cache: "no-store" }).then(
+    () => location.replace(url + location.hash),
+    () => {
+      const note = document.createElement("div");
+      note.className = "pr-moved";
+      note.textContent = `This copy can't send to the agent, and the live page (${url}) has stopped. Use Respond → Copy response and paste it back instead.`;
+      document.querySelector("header")?.prepend(note);
+    },
+  );
+})();

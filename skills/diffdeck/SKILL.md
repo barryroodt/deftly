@@ -161,8 +161,10 @@ Start a new document; never edit the earlier round's files. Name it `<repo>-<pr 
 `diffdeck <file>.json --repo <checkout> --serve --open` writes the `.html`, serves the page on `127.0.0.1` and waits. The user presses Respond → Send to agent; diffdeck prints the response to stdout and exits. Run it so you get that output without blocking or polling:
 
 - **omp:** `bash` with `async: true` and `timeout: 0`. The response arrives as the job's result.
-- **Claude Code:** `Bash` with `run_in_background: true`. Read the command's output when it reports that it finished.
+- **Claude Code:** `Bash` with `run_in_background: true` and `timeout: 7200000`, the 2-hour maximum (the default stops the server after 30 minutes). Tell the user the page stops taking responses after 2 hours. Read the command's output when it reports that it finished.
 - **Other harnesses:** use a background command if there is one. If commands are cut off after a few minutes, skip `--serve`: render with `--open` and ask the user to press Copy response and paste it into chat.
+
+**Hand over the served URL, not the `.html` path.** Only the served page (`http://127.0.0.1:<port>/`) can send. Get its address from the `serving …` line on stderr, or from the `url` in `~/.local/state/diffdeck/serving/<pid>.json` whose `html` matches your file. When you relay the page through another agent, pass the URL on too. While the server runs, the written `.html` redirects to the live page; after it stops, the file shows a notice to use Copy response.
 
 If the server stops early, Copy response still works. `--serve` refuses a posted review and can't be combined with `--payload`.
 
